@@ -1,0 +1,10 @@
+2025/09/08-19:03:22.879 73f4 Reusing MANIFEST C:\Users\admin\AppData\Local\Google\Chrome\User Data\Default\Local Storage\leveldb/MANIFEST-000001
+2025/09/08-19:03:22.885 73f4 Recovering log #167
+2025/09/08-19:03:22.886 73f4 Level-0 table #170: started
+2025/09/08-19:03:22.891 73f4 Level-0 table #170: 20382 bytes OK
+2025/09/08-19:03:22.891 73f4 Recovering log #170
+2025/09/08-19:03:22.893 73f4 Reusing old log C:\Users\admin\AppData\Local\Google\Chrome\User Data\Default\Local Storage\leveldb/000170.log 
+2025/09/08-19:03:22.895 73f4 Delete type=0 #167
+2025/09/08-19:03:22.895 73f4 Delete type=2 #171
+2025/09/08-19:04:45.768 73f4 Level-0 table #172: started
+2025/09/08-19:04:45.775 73f4 Level-0 table #172: 18400 bytes OK

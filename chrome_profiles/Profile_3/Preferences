@@ -1,0 +1,69 @@
+{
+  "profile": {
+    "content_settings": {
+      "exceptions": {
+        "images": {
+          "*": {
+            "setting": 2
+          }
+        },
+        "javascript": {
+          "*": {
+            "setting": 2
+          }
+        },
+        "plugins": {
+          "*": {
+            "setting": 2
+          }
+        },
+        "popups": {
+          "*": {
+            "setting": 2
+          }
+        },
+        "geolocation": {
+          "*": {
+            "setting": 2
+          }
+        },
+        "notifications": {
+          "*": {
+            "setting": 2
+          }
+        },
+        "media_stream": {
+          "*": {
+            "setting": 2
+          }
+        }
+      }
+    },
+    "default_content_setting_values": {
+      "images": 2,
+      "javascript": 2,
+      "plugins": 2,
+      "popups": 2,
+      "geolocation": 2,
+      "notifications": 2,
+      "media_stream": 2,
+      "automatic_downloads": 2
+    }
+  },
+  "browser": {
+    "check_default_browser": false,
+    "show_home_button": false,
+    "show_bookmark_bar": false
+  },
+  "privacy_sandbox": {
+    "ad_measurement_enabled": false,
+    "fledge_enabled": false,
+    "topics_enabled": false
+  },
+  "translate": {
+    "enabled": false
+  },
+  "sync": {
+    "suppress_start": true
+  }
+}

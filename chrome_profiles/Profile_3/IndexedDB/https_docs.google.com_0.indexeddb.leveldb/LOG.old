@@ -1,0 +1,7 @@
+2025/09/05-01:07:20.164 aeec Reusing MANIFEST C:\Users\admin\AppData\Local\Google\Chrome\User Data\Default\IndexedDB\https_docs.google.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/09/05-01:07:20.166 aeec Recovering log #3
+2025/09/05-01:07:20.168 aeec Reusing old log C:\Users\admin\AppData\Local\Google\Chrome\User Data\Default\IndexedDB\https_docs.google.com_0.indexeddb.leveldb/000003.log 
+2025/09/05-01:07:22.870 6244 Level-0 table #5: started
+2025/09/05-01:07:22.872 6244 Level-0 table #5: 8490 bytes OK
+2025/09/05-01:07:22.874 6244 Delete type=0 #3
+2025/09/05-01:07:22.874 6244 Manual compaction at level-0 from (begin) .. (end); will stop at (end)
