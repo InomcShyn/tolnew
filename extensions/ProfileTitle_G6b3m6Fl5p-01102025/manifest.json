@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "ProfileTitle: G6b3m6Fl5p-01102025",
+  "version": "1.0.0",
+  "description": "Prefix page title with profile name for easy identification.",
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "profile_title.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "permissions": []
+}

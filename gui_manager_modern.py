@@ -444,6 +444,12 @@ class ModernChromeProfileManager:
                                                      command=self.show_proxy_config_tab)
         self.tab_buttons['proxy_config'].pack(fill=tk.X, pady=(0, 6))
         
+        # Tab Import
+        self.tab_buttons['import'] = ttk.Button(tabs_frame, text="📥 Import", 
+                                               style='TabBar.TButton',
+                                               command=self.show_import_tab)
+        self.tab_buttons['import'].pack(fill=tk.X, pady=(0, 6))
+        
         # Tab Settings
         self.tab_buttons['settings'] = ttk.Button(tabs_frame, text="⚙️ Settings", 
                                                  style='TabBar.TButton',
@@ -530,7 +536,7 @@ class ModernChromeProfileManager:
         ttk.Button(control_frame, text="🚀 Chạy hàng loạt", 
                   style='Modern.TButton',
                   command=self.bulk_run_selected).pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Button(control_frame, text="💾 TikTok Sessions", 
+        ttk.Button(control_frame, text="💾 TikTok", 
                   style='Modern.TButton',
                   command=self.manage_tiktok_sessions).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(control_frame, text="📺 Treo Livestream", 
@@ -589,6 +595,22 @@ class ModernChromeProfileManager:
         
         # Context menu
         self.setup_context_menu()
+        
+        # Thêm nút để xóa session đăng nhập
+        session_frame = ttk.Frame(self.content_frame, style='Modern.TFrame')
+        session_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        ttk.Button(session_frame, text="🗑️ Xóa session đăng nhập", 
+                  command=self.clear_login_session,
+                  style='Modern.TButton').pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Button(session_frame, text="🔄 Làm mới trạng thái", 
+                  command=self.refresh_profiles,
+                  style='Modern.TButton').pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Button(session_frame, text="🎮 Master Control Mode", 
+                  command=self.show_master_control_dialog,
+                  style='Modern.TButton').pack(side=tk.LEFT)
         
         # Status bar với style đẹp hơn
         status_frame = ttk.Frame(self.content_frame, style='Modern.TFrame')
@@ -1742,6 +1764,10 @@ class ModernChromeProfileManager:
         ttk.Button(device_frame, text="🧪 Test Auto 2FA", 
                   command=self.test_auto_2fa_connection).pack(side=tk.LEFT, padx=(0, 10))
         
+        # Continuous monitor button
+        ttk.Button(device_frame, text="🔍 Continuous Monitor", 
+                  command=self.start_continuous_monitor).pack(side=tk.LEFT, padx=(0, 10))
+        
         # Token Management
         token_frame = ttk.LabelFrame(main_frame, text="💾 Token Management", padding="15")
         token_frame.pack(fill=tk.X, pady=(0, 15))
@@ -1878,6 +1904,371 @@ class ModernChromeProfileManager:
         
         self.current_tab = 'email_config'
         self.update_tab_highlight()
+        
+    def show_import_tab(self):
+        """Hiển thị tab Import"""
+        self.update_tab_highlight('import')
+        self.clear_content()
+        
+        # Header
+        header_frame = ttk.Frame(self.content_frame, style='Modern.TFrame')
+        header_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        title_label = ttk.Label(header_frame, text="📥 Import Profiles từ Excel", 
+                               style='Modern.TLabel', font=('Arial', 24, 'bold'))
+        title_label.pack(anchor=tk.W)
+        
+        # Description
+        desc_label = ttk.Label(header_frame, 
+                              text="Import nhiều profiles từ file Excel với cấu hình proxy và user agent",
+                              style='Modern.TLabel', font=('Arial', 12))
+        desc_label.pack(anchor=tk.W, pady=(5, 0))
+        
+        # Main content frame
+        main_frame = ttk.Frame(self.content_frame, style='Modern.TFrame')
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Left panel - Import controls
+        left_panel = ttk.Frame(main_frame, style='Modern.TFrame')
+        left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        # File selection
+        file_frame = ttk.LabelFrame(left_panel, text="📁 Chọn file Excel", padding="15")
+        file_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        file_path_var = tk.StringVar()
+        file_entry = ttk.Entry(file_frame, textvariable=file_path_var, font=('Arial', 11))
+        file_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        
+        def browse_file():
+            from tkinter import filedialog
+            file_path = filedialog.askopenfilename(
+                title="Chọn file Excel",
+                filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")]
+            )
+            if file_path:
+                file_path_var.set(file_path)
+                load_preview()
+        
+        browse_btn = ttk.Button(file_frame, text="Browse", command=browse_file)
+        browse_btn.pack(side=tk.RIGHT)
+        
+        # Import options
+        options_frame = ttk.LabelFrame(left_panel, text="⚙️ Tùy chọn Import", padding="15")
+        options_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        # Checkboxes
+        skip_header_var = tk.BooleanVar(value=True)
+        skip_header_cb = ttk.Checkbutton(options_frame, text="Bỏ qua dòng header (dòng 1)", 
+                                        variable=skip_header_var)
+        skip_header_cb.pack(anchor=tk.W, pady=(0, 5))
+        
+        auto_create_var = tk.BooleanVar(value=True)
+        auto_create_cb = ttk.Checkbutton(options_frame, text="Tự động tạo profiles", 
+                                        variable=auto_create_var)
+        auto_create_cb.pack(anchor=tk.W, pady=(0, 5))
+        
+        # Import button
+        def start_import():
+            if not file_path_var.get():
+                messagebox.showerror("Lỗi", "Vui lòng chọn file Excel!")
+                return
+            
+            try:
+                import_profiles_from_excel(file_path_var.get(), skip_header_var.get(), auto_create_var.get())
+            except Exception as e:
+                messagebox.showerror("Lỗi", f"Lỗi khi import: {str(e)}")
+        
+        import_btn = ttk.Button(left_panel, text="🚀 Bắt đầu Import", 
+                               command=start_import, style='Accent.TButton')
+        import_btn.pack(fill=tk.X, pady=(0, 20))
+        
+        # Import từ GPMLogin folder
+        gpml_frame = ttk.LabelFrame(left_panel, text="📂 Nhập từ thư mục GPMLogin", padding="15")
+        gpml_frame.pack(fill=tk.X, pady=(0, 20))
+        gpml_dir_var = tk.StringVar(value="")
+        gpml_entry = ttk.Entry(gpml_frame, textvariable=gpml_dir_var, font=('Arial', 11))
+        gpml_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        
+        def browse_gpml_dir():
+            from tkinter import filedialog
+            d = filedialog.askdirectory(title="Chọn thư mục GPMLogin")
+            if d:
+                gpml_dir_var.set(d)
+        ttk.Button(gpml_frame, text="Chọn", command=browse_gpml_dir).pack(side=tk.RIGHT)
+        
+        def import_from_gpmlogin(dir_path: str):
+            try:
+                import os, json, time
+                # Read files
+                setting_path = os.path.join(dir_path, 'setting.dat')
+                proxies_path = os.path.join(dir_path, 'proxies.dat')
+                if not os.path.exists(setting_path) or not os.path.exists(proxies_path):
+                    messagebox.showerror("Lỗi", "Không tìm thấy setting.dat hoặc proxies.dat trong thư mục đã chọn")
+                    return
+                with open(setting_path, 'r', encoding='utf-8') as f:
+                    gpml_setting = json.loads(f.read().strip())
+                with open(proxies_path, 'r', encoding='utf-8') as f:
+                    gpml_proxies = json.loads(f.read().strip())
+                
+                default = gpml_setting.get('DefaultProfileSetting', {}) if isinstance(gpml_setting, dict) else {}
+                # Map một số trường
+                ua_default = default.get('user_agent') or ''
+                lang_auto = bool(default.get('auto_language', True))
+                noise_canvas = bool(default.get('is_noise_canvas', False))
+                noise_webgl = bool(default.get('is_noise_webgl', False))
+                noise_client = bool(default.get('is_noise_client_rect', False))
+                noise_audio = bool(default.get('is_noise_audio_context', True))
+                webgl_masked = bool(default.get('is_masked_webgl_data', True))
+                media_masked = bool(default.get('is_masked_media_device', True))
+                webrtc_mode = int(default.get('webrtc_mode', 2))
+                # Map webrtc_mode -> policy
+                webrtc_policy = 'default_public_interface_only' if webrtc_mode in (1,2,3) else 'default'
+                
+                # Tạo và lưu Template GPM-Default để dùng trong Create Profile
+                try:
+                    template_dir = os.path.join('data', 'templates')
+                    os.makedirs(template_dir, exist_ok=True)
+                    gpm_template = {
+                        'name': 'GPM-Default',
+                        'software': {
+                            'user_agent': ua_default or '',
+                            'auto_language': lang_auto,
+                            'webrtc_policy': webrtc_policy,
+                            'startup_url': (default.get('startup_urls') or '')
+                        },
+                        'hardware': {
+                            'canvas_noise': 'On' if noise_canvas else 'Off',
+                            'webgl_image_noise': 'On' if noise_webgl else 'Off',
+                            'client_rect_noise': 'On' if noise_client else 'Off',
+                            'audio_noise': 'On' if noise_audio else 'Off',
+                            'webgl_meta_masked': bool(webgl_masked),
+                            'media_devices_masked': bool(media_masked)
+                        }
+                    }
+                    with open(os.path.join(template_dir, 'gpm_default.json'), 'w', encoding='utf-8') as tf:
+                        json.dump(gpm_template, tf, ensure_ascii=False, indent=2)
+                except Exception as _te:
+                    print(f"[IMPORT-GPML] Không lưu được template: {_te}")
+
+                success_count = 0
+                error_count = 0
+                for idx, p in enumerate(gpml_proxies or []):
+                    try:
+                        host = str(p.get('Host', '')).strip()
+                        port = str(p.get('Port', ''))
+                        user = str(p.get('UserName', '') or '')
+                        pwd = str(p.get('Password', '') or '')
+                        ptype = int(p.get('Type', 2))
+                        # Map type -> connection type label
+                        if ptype == 3:
+                            conn_type = 'Socks 5'
+                        elif ptype == 4:
+                            conn_type = 'Socks 4'
+                        else:
+                            conn_type = 'Proxy'
+                        conn_data = f"{host}:{port}" + (f":{user}:{pwd}" if user and pwd else '')
+                        profile_name = f"GPML_{idx+1:03d}"
+                        
+                        # Tạo profile
+                        ok, msg = self.manager.clone_chrome_profile(profile_name, "Default", "work")
+                        if not ok:
+                            error_count += 1
+                            continue
+                        profile_path = os.path.join(self.manager.profiles_dir, profile_name)
+                        settings_path = os.path.join(profile_path, 'profile_settings.json')
+                        # Load existing settings then update
+                        data = {}
+                        if os.path.exists(settings_path):
+                            try:
+                                with open(settings_path, 'r', encoding='utf-8') as sf:
+                                    data = json.load(sf)
+                            except Exception:
+                                data = {}
+                        data.setdefault('profile_info', {})
+                        data['profile_info']['name'] = profile_name
+                        data['profile_info']['display_name'] = profile_name
+                        data['profile_info']['type'] = 'work'
+                        data['profile_info']['created_at'] = time.strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        sw = data.setdefault('software', {})
+                        sw['user_agent'] = ua_default or sw.get('user_agent') or ''
+                        sw['language'] = 'en-US' if lang_auto else (sw.get('language') or 'en-US')
+                        sw['webrtc_policy'] = webrtc_policy
+                        sw['startup_url'] = sw.get('startup_url', '')
+                        sw['os_font'] = sw.get('os_font', 'Real')
+                        
+                        hw = data.setdefault('hardware', {})
+                        hw['canvas_noise'] = 'On' if noise_canvas else 'Off'
+                        hw['webgl_image_noise'] = 'On' if noise_webgl else 'Off'
+                        hw['client_rect_noise'] = 'On' if noise_client else 'Off'
+                        hw['audio_noise'] = 'On' if noise_audio else 'Off'
+                        hw['webgl_meta_masked'] = bool(webgl_masked)
+                        hw['media_devices_masked'] = bool(media_masked)
+                        
+                        conn = data.setdefault('connection', {})
+                        conn['type'] = conn_type
+                        conn['data'] = conn_data
+                        conn['group'] = default.get('group_name', 'All')
+                        
+                        os.makedirs(profile_path, exist_ok=True)
+                        with open(settings_path, 'w', encoding='utf-8') as sfw:
+                            json.dump(data, sfw, ensure_ascii=False, indent=2)
+                        success_count += 1
+                    except Exception as e:
+                        print(f"[IMPORT-GPML] lỗi proxy {idx+1}: {e}")
+                        error_count += 1
+                
+                messagebox.showinfo("Nhập xong", f"✅ {success_count} profile | ❌ {error_count} lỗi")
+                self.refresh_profiles()
+            except Exception as e:
+                messagebox.showerror("Lỗi", f"Import GPMLogin thất bại: {e}")
+        
+        ttk.Button(left_panel, text="📥 Import từ GPMLogin", command=lambda: import_from_gpmlogin(gpml_dir_var.get())).pack(fill=tk.X)
+        
+        # Right panel - Preview
+        right_panel = ttk.Frame(main_frame, style='Modern.TFrame')
+        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
+        # Preview frame
+        preview_frame = ttk.LabelFrame(right_panel, text="👁️ Preview dữ liệu", padding="15")
+        preview_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Treeview for preview
+        columns = ('Browser', 'Profile Name', 'Connection Type', 'Connection Data', 'Group', 'User Agent')
+        preview_tree = ttk.Treeview(preview_frame, columns=columns, show='headings', height=15)
+        
+        # Configure columns
+        for col in columns:
+            preview_tree.heading(col, text=col)
+            preview_tree.column(col, width=120, minwidth=100)
+        
+        # Scrollbar
+        preview_scrollbar = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=preview_tree.yview)
+        preview_tree.configure(yscrollcommand=preview_scrollbar.set)
+        
+        preview_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        preview_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        def load_preview():
+            """Load preview data from Excel file"""
+            if not file_path_var.get():
+                return
+            
+            try:
+                # Clear existing items
+                for item in preview_tree.get_children():
+                    preview_tree.delete(item)
+                
+                # Load Excel data
+                import pandas as pd
+                df = pd.read_excel(file_path_var.get())
+                
+                # Skip header if needed
+                if skip_header_var.get() and len(df) > 0:
+                    df = df.iloc[1:]
+                
+                # Add data to treeview
+                for index, row in df.iterrows():
+                    values = []
+                    for col in columns:
+                        value = str(row.get(col, '')) if col in df.columns else ''
+                        values.append(value[:50] + '...' if len(value) > 50 else value)
+                    preview_tree.insert('', tk.END, values=values)
+                
+                # Update column widths
+                for col in columns:
+                    preview_tree.column(col, width=150)
+                
+            except Exception as e:
+                messagebox.showerror("Lỗi", f"Không thể load preview: {str(e)}")
+        
+        def import_profiles_from_excel(file_path, skip_header, auto_create):
+            """Import profiles from Excel file"""
+            try:
+                import pandas as pd
+                df = pd.read_excel(file_path)
+                
+                # Skip header if needed
+                if skip_header and len(df) > 0:
+                    df = df.iloc[1:]
+                
+                success_count = 0
+                error_count = 0
+                
+                for index, row in df.iterrows():
+                    try:
+                        # Extract data
+                        browser_name = str(row.get('Browser name', 'Chrome')).strip()
+                        profile_name = str(row.get('Profile name', f'Profile_{index+1}')).strip()
+                        connection_type = str(row.get('Connection Type', 'Local')).strip()
+                        connection_data = str(row.get('Connection data (Proxy / Socks5)', '')).strip()
+                        group = str(row.get('Group', 'All')).strip()
+                        custom_ua = str(row.get('Custom user agent', '')).strip()
+                        
+                        if not profile_name or profile_name == 'nan':
+                            continue
+                        
+                        # Create profile
+                        if auto_create:
+                            success, message = self.manager.clone_chrome_profile(profile_name, "Default", "work")
+                            if success:
+                                # Save settings
+                                profile_path = os.path.join(self.manager.profiles_dir, profile_name)
+                                settings_path = os.path.join(profile_path, 'profile_settings.json')
+                                
+                                settings_data = {
+                                    'profile_info': {
+                                        'name': profile_name,
+                                        'display_name': profile_name,
+                                        'type': 'work',
+                                        'created_at': time.strftime('%Y-%m-%d %H:%M:%S')
+                                    },
+                                    'software': {
+                                        'user_agent': custom_ua if custom_ua and custom_ua != 'nan' else 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.109 Safari/537.36',
+                                        'language': 'en-US',
+                                        'startup_url': '',
+                                        'webrtc_policy': 'default_public_interface_only',
+                                        'os_font': 'Real'
+                                    },
+                                    'hardware': {
+                                        'mac_address': self.manager._generate_random_mac()
+                                    },
+                                    'connection': {
+                                        'type': connection_type,
+                                        'data': connection_data,
+                                        'group': group
+                                    }
+                                }
+                                
+                                import json
+                                with open(settings_path, 'w', encoding='utf-8') as f:
+                                    json.dump(settings_data, f, ensure_ascii=False, indent=2)
+                                
+                                success_count += 1
+                            else:
+                                error_count += 1
+                        else:
+                            success_count += 1
+                            
+                    except Exception as e:
+                        print(f"Lỗi import profile {index+1}: {str(e)}")
+                        error_count += 1
+                
+                # Show result
+                messagebox.showinfo("Hoàn thành", 
+                                  f"Import hoàn thành!\n"
+                                  f"✅ Thành công: {success_count} profiles\n"
+                                  f"❌ Lỗi: {error_count} profiles")
+                
+                # Refresh profiles list
+                self.refresh_profiles()
+                
+            except Exception as e:
+                messagebox.showerror("Lỗi", f"Lỗi khi import: {str(e)}")
+        
+        # Bind file path change to load preview
+        file_path_var.trace('w', lambda *args: load_preview())
         
     def show_settings_tab(self):
         """Hiển thị tab Settings"""
@@ -2077,6 +2468,9 @@ class ModernChromeProfileManager:
         self.context_menu.add_command(label="📥 Import Cookies", 
                                      command=self.import_cookies)
         self.context_menu.add_separator()
+        self.context_menu.add_command(label="✏️ Chỉnh sửa cấu hình...",
+                                     command=self.edit_profile_settings)
+        self.context_menu.add_separator()
         self.context_menu.add_command(label="🗑️ Xóa Profile", 
                                      command=self.delete_profile)
         self.context_menu.add_command(label="🗑️ Xóa Hàng Loạt", 
@@ -2089,6 +2483,345 @@ class ModernChromeProfileManager:
         item = self.tree.selection()[0] if self.tree.selection() else None
         if item:
             self.context_menu.post(event.x_root, event.y_root)
+    
+    def edit_profile_settings(self):
+        """Mở dialog chỉnh sửa Software/Hardware cho profile đang chọn"""
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showwarning("Cảnh báo", "Vui lòng chọn một profile để chỉnh sửa!")
+            return
+        profile_name = self.tree.item(selection[0])['text']
+        if not profile_name:
+            messagebox.showwarning("Cảnh báo", "Không xác định được profile!")
+            return
+        import os, json
+        profile_path = os.path.join(self.manager.profiles_dir, profile_name)
+        settings_path = os.path.join(profile_path, 'profile_settings.json')
+        data = {}
+        try:
+            if os.path.exists(settings_path):
+                with open(settings_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+        except Exception as e:
+            print(f"⚠️ Không đọc được settings: {e}")
+            data = {}
+        # Defaults
+        sw = data.get('software', {})
+        hw = data.get('hardware', {})
+        # Bổ sung giá trị mặc định từ hệ thống nếu chưa có
+        try:
+            import os as _os
+            import uuid as _uuid
+            try:
+                import psutil as _psutil
+            except Exception:
+                _psutil = None
+            if not hw.get('cpu_cores'):
+                hw['cpu_cores'] = str(_os.cpu_count() or '')
+            if not hw.get('device_memory'):
+                if _psutil:
+                    try:
+                        hw['device_memory'] = str(int(round((_psutil.virtual_memory().total or 0) / (1024**3))))
+                    except Exception:
+                        hw['device_memory'] = ''
+                else:
+                    hw['device_memory'] = ''
+            if not hw.get('mac_address'):
+                try:
+                    mac_int = _uuid.getnode()
+                    mac_hex = ':'.join(f"{(mac_int >> ele) & 0xff:02X}" for ele in range(40, -1, -8))
+                    hw['mac_address'] = mac_hex
+                except Exception:
+                    hw['mac_address'] = ''
+            # Media defaults nếu thiếu
+            hw.setdefault('media_audio_inputs', '2')
+            hw.setdefault('media_audio_outputs', '0')
+            hw.setdefault('media_video_inputs', '0')
+            # WebGL masked mặc định True
+            if 'webgl_meta_masked' not in hw:
+                hw['webgl_meta_masked'] = True
+        except Exception as _e:
+            print(f"⚠️ Không thể lấy thông tin phần cứng mặc định: {_e}")
+        # Dialog
+        dlg = tk.Toplevel(self.root)
+        dlg.title(f"Chỉnh sửa cấu hình - {profile_name}")
+        dlg.geometry("780x600")
+        dlg.minsize(720, 520)
+        dlg.transient(self.root)
+        dlg.grab_set()
+        notebook = ttk.Notebook(dlg)
+        notebook.pack(fill=tk.BOTH, expand=True)
+        # Software tab
+        sw_frame = ttk.Frame(notebook, padding=15)
+        notebook.add(sw_frame, text="Software")
+        # UA
+        ttk.Label(sw_frame, text="User-Agent:").grid(row=0, column=0, sticky='w')
+        ua_var = tk.StringVar(value=sw.get('user_agent', ''))
+        ua_entry = ttk.Entry(sw_frame, textvariable=ua_var)
+        ua_entry.grid(row=0, column=1, sticky='ew', padx=8)
+        # Language
+        ttk.Label(sw_frame, text="Language (Accept-Language / --lang):").grid(row=1, column=0, sticky='w', pady=(8,0))
+        lang_var = tk.StringVar(value=sw.get('language', 'en-US'))
+        lang_entry = ttk.Entry(sw_frame, textvariable=lang_var)
+        lang_entry.grid(row=1, column=1, sticky='ew', padx=8, pady=(8,0))
+        # Startup URL
+        ttk.Label(sw_frame, text="Startup URL:").grid(row=2, column=0, sticky='w', pady=(8,0))
+        url_var = tk.StringVar(value=sw.get('startup_url', ''))
+        url_entry = ttk.Entry(sw_frame, textvariable=url_var)
+        url_entry.grid(row=2, column=1, sticky='ew', padx=8, pady=(8,0))
+        # WebRTC policy
+        ttk.Label(sw_frame, text="WebRTC IP policy:").grid(row=3, column=0, sticky='w', pady=(8,0))
+        webrtc_var = tk.StringVar(value=sw.get('webrtc_policy', 'default_public_interface_only'))
+        webrtc_combo = ttk.Combobox(sw_frame, textvariable=webrtc_var, state='readonly', values=[
+            'default_public_interface_only', 'default', 'disable_non_proxied_udp'
+        ])
+        webrtc_combo.grid(row=3, column=1, sticky='ew', padx=8, pady=(8,0))
+        # OS Font (display only)
+        ttk.Label(sw_frame, text="OS Font (tùy chọn):").grid(row=4, column=0, sticky='w', pady=(8,0))
+        font_var = tk.StringVar(value=sw.get('os_font', 'Real'))
+        font_entry = ttk.Entry(sw_frame, textvariable=font_var)
+        font_entry.grid(row=4, column=1, sticky='ew', padx=8, pady=(8,0))
+        sw_frame.columnconfigure(1, weight=1)
+        # Hardware tab
+        hw_frame = ttk.Frame(notebook, padding=15)
+        notebook.add(hw_frame, text="Hardware")
+        # Mặc định chọn tab Software khi mở
+        try:
+            notebook.select(sw_frame)
+        except Exception:
+            pass
+        # Thông báo về thông tin phần cứng ngẫu nhiên
+        info_label = ttk.Label(hw_frame, text="Phần mềm đã tạo ngẫu nhiên một thông tin phần cứng. Nếu không quá hiểu về Fingerprint, bạn có thể không quan tâm tới phần này. Các thông tin về RAM, CPU Core, Audio, Media outputs, WebGL, Tên card màn hình... đã được sinh ngẫu nhiên!", 
+                              font=("Segoe UI", 9), foreground="gray", wraplength=600)
+        info_label.grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 15))
+        
+        # Tạo 2 cột
+        left_frame = ttk.Frame(hw_frame)
+        left_frame.grid(row=1, column=0, sticky='nw', padx=(0, 20))
+        right_frame = ttk.Frame(hw_frame)
+        right_frame.grid(row=1, column=1, sticky='nw')
+        
+        # Cột trái - Cấu hình Hardware
+        # Phân giải màn hình
+        ttk.Label(left_frame, text="Phân giải màn hình:").grid(row=0, column=0, sticky='w', pady=(0, 5))
+        screen_res_var = tk.StringVar(value=hw.get('screen_resolution', 'Real'))
+        ttk.Entry(left_frame, textvariable=screen_res_var, width=20).grid(row=0, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Canvas noise
+        ttk.Label(left_frame, text="Canvas noise:").grid(row=1, column=0, sticky='w', pady=(0, 5))
+        canvas_noise_var = tk.StringVar(value=hw.get('canvas_noise', 'Off'))
+        canvas_combo = ttk.Combobox(left_frame, textvariable=canvas_noise_var, state='readonly', values=['Off', 'On'], width=17)
+        canvas_combo.grid(row=1, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Client rect noise
+        ttk.Label(left_frame, text="Client rect noise:").grid(row=2, column=0, sticky='w', pady=(0, 5))
+        client_rect_var = tk.StringVar(value=hw.get('client_rect_noise', 'Off'))
+        client_rect_combo = ttk.Combobox(left_frame, textvariable=client_rect_var, state='readonly', values=['Off', 'On'], width=17)
+        client_rect_combo.grid(row=2, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # WebGL image noise
+        ttk.Label(left_frame, text="WebGL image noise:").grid(row=3, column=0, sticky='w', pady=(0, 5))
+        webgl_img_var = tk.StringVar(value=hw.get('webgl_image_noise', 'Off'))
+        webgl_img_combo = ttk.Combobox(left_frame, textvariable=webgl_img_var, state='readonly', values=['Off', 'On'], width=17)
+        webgl_img_combo.grid(row=3, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Audio noise
+        ttk.Label(left_frame, text="Audio noise:").grid(row=4, column=0, sticky='w', pady=(0, 5))
+        audio_noise_var = tk.StringVar(value=hw.get('audio_noise', 'On'))
+        audio_combo = ttk.Combobox(left_frame, textvariable=audio_noise_var, state='readonly', values=['Off', 'On'], width=17)
+        audio_combo.grid(row=4, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # WebGL Meta masked
+        webgl_mask_var = tk.BooleanVar(value=hw.get('webgl_meta_masked', True))
+        ttk.Checkbutton(left_frame, text="✔ WebGL Meta masked", variable=webgl_mask_var).grid(row=5, column=0, columnspan=2, sticky='w', pady=(5, 5))
+        
+        # WebGL Vendor
+        ttk.Label(left_frame, text="WebGL Vendor:").grid(row=6, column=0, sticky='w', pady=(0, 5))
+        webgl_vendor_var = tk.StringVar(value=hw.get('webgl_vendor', 'Google Inc. (NVIDIA)'))
+        ttk.Entry(left_frame, textvariable=webgl_vendor_var, width=20).grid(row=6, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # WebGL Renderer
+        ttk.Label(left_frame, text="WebGL Renderer:").grid(row=7, column=0, sticky='w', pady=(0, 5))
+        webgl_renderer_var = tk.StringVar(value=hw.get('webgl_renderer', 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)'))
+        ttk.Entry(left_frame, textvariable=webgl_renderer_var, width=20).grid(row=7, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Media devices masked
+        media_mask_var = tk.BooleanVar(value=hw.get('media_devices_masked', True))
+        ttk.Checkbutton(left_frame, text="✔ Media devices masked (Audio inputs / Audio outputs / Video inputs)", variable=media_mask_var).grid(row=8, column=0, columnspan=2, sticky='w', pady=(5, 5))
+        
+        # Media inputs/outputs trong 1 dòng
+        media_frame = ttk.Frame(left_frame)
+        media_frame.grid(row=9, column=0, columnspan=2, sticky='w', pady=(0, 5))
+        mai_var = tk.StringVar(value=str(hw.get('media_audio_inputs', '1')))
+        ttk.Entry(media_frame, textvariable=mai_var, width=5).grid(row=0, column=0, padx=(0, 5))
+        mao_var = tk.StringVar(value=str(hw.get('media_audio_outputs', '1')))
+        ttk.Entry(media_frame, textvariable=mao_var, width=5).grid(row=0, column=1, padx=(0, 5))
+        mvi_var = tk.StringVar(value=str(hw.get('media_video_inputs', '1')))
+        ttk.Entry(media_frame, textvariable=mvi_var, width=5).grid(row=0, column=2)
+        
+        # CPU cores
+        ttk.Label(left_frame, text="CPU core:").grid(row=10, column=0, sticky='w', pady=(0, 5))
+        cpu_var = tk.StringVar(value=str(hw.get('cpu_cores', '')))
+        ttk.Entry(left_frame, textvariable=cpu_var, width=20).grid(row=10, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Memory devices
+        ttk.Label(left_frame, text="Memory devices:").grid(row=11, column=0, sticky='w', pady=(0, 5))
+        mem_var = tk.StringVar(value=str(hw.get('device_memory', '')))
+        ttk.Entry(left_frame, textvariable=mem_var, width=20).grid(row=11, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # MAC address
+        ttk.Label(left_frame, text="MAC address:").grid(row=12, column=0, sticky='w', pady=(0, 5))
+        mac_var = tk.StringVar(value=hw.get('mac_address', ''))
+        ttk.Entry(left_frame, textvariable=mac_var, width=20).grid(row=12, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Nút tạo thông số mới
+        def generate_new_params():
+            import random, os
+            # Tạo các giá trị ngẫu nhiên
+            resolutions = ['1920x1080', '1366x768', '1440x900', '1536x864', 'Real']
+            screen_res_var.set(random.choice(resolutions))
+            canvas_noise_var.set(random.choice(['Off', 'On']))
+            client_rect_var.set(random.choice(['Off', 'On']))
+            webgl_img_var.set(random.choice(['Off', 'On']))
+            audio_noise_var.set(random.choice(['Off', 'On']))
+            webgl_vendor_var.set(random.choice(['Google Inc. (NVIDIA)', 'Google Inc. (Intel)', 'Google Inc. (AMD)']))
+            webgl_renderer_var.set(random.choice([
+                'ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)',
+                'ANGLE (Intel, Intel(R) HD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)',
+                'ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0, D3D11)'
+            ]))
+            cpu_var.set(str(random.randint(4, 16)))
+            mem_var.set(str(random.randint(4, 32)))
+            # Tạo MAC mới
+            mac_bytes = [random.randint(0, 255) for _ in range(6)]
+            mac_bytes[0] = (mac_bytes[0] | 0x02) & 0xFE  # locally administered, unicast
+            mac_var.set(':'.join(f'{b:02X}' for b in mac_bytes))
+            mai_var.set(str(random.randint(1, 3)))
+            mao_var.set(str(random.randint(0, 2)))
+            mvi_var.set(str(random.randint(0, 2)))
+        
+        ttk.Button(left_frame, text="✖ Tạo thông số mới", command=generate_new_params).grid(row=13, column=0, columnspan=2, sticky='w', pady=(10, 0))
+        
+        # Cột phải - Thông tin hiện tại
+        ttk.Label(right_frame, text="Thông tin hiện tại:", font=("Segoe UI", 10, "bold")).grid(row=0, column=0, sticky='w', pady=(0, 10))
+        
+        # User-agent
+        ttk.Label(right_frame, text="User-agent:").grid(row=1, column=0, sticky='w', pady=(0, 2))
+        ua_display = tk.Text(right_frame, height=2, width=50, wrap=tk.WORD, font=("Consolas", 8))
+        ua_display.grid(row=2, column=0, sticky='w', pady=(0, 5))
+        ua_display.insert('1.0', sw.get('user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'))
+        ua_display.config(state='disabled')
+        
+        # OS
+        ttk.Label(right_frame, text="OS:").grid(row=3, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text="Windows 11 64 bit").grid(row=4, column=0, sticky='w', pady=(0, 5))
+        
+        # Proxy
+        ttk.Label(right_frame, text="Proxy:").grid(row=5, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text="Local IP").grid(row=6, column=0, sticky='w', pady=(0, 5))
+        
+        # Screen
+        ttk.Label(right_frame, text="Screen:").grid(row=7, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text="-1x-1").grid(row=8, column=0, sticky='w', pady=(0, 5))
+        
+        # Timezone
+        ttk.Label(right_frame, text="Timezone:").grid(row=9, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text="Base on IP").grid(row=10, column=0, sticky='w', pady=(0, 5))
+        
+        # Font list
+        ttk.Label(right_frame, text="Font list:").grid(row=11, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text="Real").grid(row=12, column=0, sticky='w', pady=(0, 5))
+        
+        # Accept-language
+        ttk.Label(right_frame, text="Accept-language:").grid(row=13, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text=sw.get('language', 'en-US')).grid(row=14, column=0, sticky='w', pady=(0, 5))
+        
+        # WebRTC
+        ttk.Label(right_frame, text="WebRTC:").grid(row=15, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text="Base on IP").grid(row=16, column=0, sticky='w', pady=(0, 5))
+        
+        # CPU core
+        ttk.Label(right_frame, text="CPU core:").grid(row=17, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text=cpu_var.get()).grid(row=18, column=0, sticky='w', pady=(0, 5))
+        
+        # Device memory
+        ttk.Label(right_frame, text="Device memory:").grid(row=19, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text=mem_var.get()).grid(row=20, column=0, sticky='w', pady=(0, 5))
+        
+        # Media audio inputs
+        ttk.Label(right_frame, text="Media audio inputs:").grid(row=21, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text=mai_var.get()).grid(row=22, column=0, sticky='w', pady=(0, 5))
+        
+        # Media audio outputs
+        ttk.Label(right_frame, text="Media audio outputs:").grid(row=23, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text=mao_var.get()).grid(row=24, column=0, sticky='w', pady=(0, 5))
+        
+        # Media video inputs
+        ttk.Label(right_frame, text="Media video inputs:").grid(row=25, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text=mvi_var.get()).grid(row=26, column=0, sticky='w', pady=(0, 5))
+        
+        # WebGL Meta
+        ttk.Label(right_frame, text="WebGL Meta:").grid(row=27, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text="Masked" if webgl_mask_var.get() else "Off").grid(row=28, column=0, sticky='w', pady=(0, 5))
+        
+        # Canvas
+        ttk.Label(right_frame, text="Canvas:").grid(row=29, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text=canvas_noise_var.get()).grid(row=30, column=0, sticky='w', pady=(0, 5))
+        
+        # Client rect
+        ttk.Label(right_frame, text="Client rect:").grid(row=31, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text=client_rect_var.get()).grid(row=32, column=0, sticky='w', pady=(0, 5))
+        
+        # WebGL
+        ttk.Label(right_frame, text="WebGL:").grid(row=33, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text=webgl_img_var.get()).grid(row=34, column=0, sticky='w', pady=(0, 5))
+        
+        # Audio Context
+        ttk.Label(right_frame, text="Audio Context:").grid(row=35, column=0, sticky='w', pady=(0, 2))
+        ttk.Label(right_frame, text=audio_noise_var.get()).grid(row=36, column=0, sticky='w', pady=(0, 5))
+        
+        hw_frame.columnconfigure(0, weight=1)
+        hw_frame.columnconfigure(1, weight=1)
+        # Buttons
+        btn_frame = ttk.Frame(dlg)
+        btn_frame.pack(fill=tk.X, pady=10)
+        def save_and_close():
+            new_data = {
+                'software': {
+                    'user_agent': ua_var.get().strip(),
+                    'language': lang_var.get().strip() or 'en-US',
+                    'startup_url': url_var.get().strip(),
+                    'webrtc_policy': webrtc_var.get().strip() or 'default_public_interface_only',
+                    'os_font': font_var.get().strip(),
+                },
+                'hardware': {
+                    'screen_resolution': screen_res_var.get().strip(),
+                    'canvas_noise': canvas_noise_var.get().strip(),
+                    'client_rect_noise': client_rect_var.get().strip(),
+                    'webgl_image_noise': webgl_img_var.get().strip(),
+                    'audio_noise': audio_noise_var.get().strip(),
+                    'webgl_meta_masked': bool(webgl_mask_var.get()),
+                    'webgl_vendor': webgl_vendor_var.get().strip(),
+                    'webgl_renderer': webgl_renderer_var.get().strip(),
+                    'media_devices_masked': bool(media_mask_var.get()),
+                    'cpu_cores': cpu_var.get().strip(),
+                    'device_memory': mem_var.get().strip(),
+                    'media_audio_inputs': mai_var.get().strip(),
+                    'media_audio_outputs': mao_var.get().strip(),
+                    'media_video_inputs': mvi_var.get().strip(),
+                    'mac_address': mac_var.get().strip(),
+                }
+            }
+            try:
+                os.makedirs(profile_path, exist_ok=True)
+                with open(settings_path, 'w', encoding='utf-8') as f:
+                    json.dump(new_data, f, ensure_ascii=False, indent=2)
+                messagebox.showinfo("Thành công", "Đã lưu cấu hình cho profile!")
+                dlg.destroy()
+            except Exception as e:
+                messagebox.showerror("Lỗi", f"Không thể lưu cấu hình: {e}")
+        ttk.Button(btn_frame, text="Lưu", command=save_and_close).pack(side=tk.RIGHT, padx=(0,10))
+        ttk.Button(btn_frame, text="Đóng", command=dlg.destroy).pack(side=tk.RIGHT, padx=10)
             
     def refresh_profiles(self):
         """Làm mới danh sách profiles"""
@@ -2112,12 +2845,17 @@ class ModernChromeProfileManager:
             running_profiles = 0
             
             for profile in profiles:
-                status = "Đang chạy" if profile in self.drivers else "Dừng"
-                if profile in self.drivers:
+                # Kiểm tra trạng thái đăng nhập TikTok
+                is_logged_in = self.manager.is_profile_logged_in(profile)
+                is_running = profile in self.drivers
+                
+                if is_running:
+                    status = "Đang chạy (Đã đăng nhập)" if is_logged_in else "Đang chạy (Chưa đăng nhập)"
                     running_profiles += 1
+                else:
+                    status = "Đã đăng nhập" if is_logged_in else "Chưa đăng nhập"
                     
-                action = "Dừng" if profile in self.drivers else "Khởi động"
-                # Profile status logging removed for cleaner output
+                action = "Dừng" if is_running else "Khởi động"
                 
                 self.tree.insert("", "end", text=profile, values=(profile, status, action))
             
@@ -2160,6 +2898,398 @@ class ModernChromeProfileManager:
                 
         except Exception as e:
             print(f"⚠️ [UPDATE-STATUS] Lỗi cập nhật trạng thái {profile_name}: {e}")
+    
+    def clear_login_session(self):
+        """Xóa session đăng nhập của profile được chọn"""
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showwarning("Cảnh báo", "Vui lòng chọn profile để xóa session!")
+            return
+        
+        profile_name = self.tree.item(selection[0])['text']
+        
+        # Xác nhận
+        if not messagebox.askyesno("Xác nhận", 
+                                  f"Bạn có chắc muốn xóa session đăng nhập của profile '{profile_name}'?\n"
+                                  f"Lần sau mở profile sẽ cần đăng nhập lại."):
+            return
+        
+        try:
+            # Xóa marker file và cookies file
+            profile_path = os.path.join(self.manager.profiles_dir, profile_name)
+            marker_file = os.path.join(profile_path, 'tiktok_logged_in.txt')
+            cookies_file = os.path.join(profile_path, 'tiktok_cookies.json')
+            
+            deleted_files = []
+            if os.path.exists(marker_file):
+                os.remove(marker_file)
+                deleted_files.append("marker file")
+            
+            if os.path.exists(cookies_file):
+                os.remove(cookies_file)
+                deleted_files.append("cookies file")
+            
+            if deleted_files:
+                messagebox.showinfo("Thành công", 
+                                  f"Đã xóa session đăng nhập của '{profile_name}':\n"
+                                  f"- {', '.join(deleted_files)}")
+                self.refresh_profiles()
+            else:
+                messagebox.showinfo("Thông báo", 
+                                  f"Profile '{profile_name}' chưa có session đăng nhập nào.")
+                
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể xóa session: {str(e)}")
+    
+    def show_master_control_dialog(self):
+        """Hiển thị dialog Master Control Mode"""
+        print("🎮 [MASTER-CONTROL] Mở dialog Master Control Mode")
+        
+        # Lấy danh sách profiles đang chạy
+        running_profiles = []
+        if hasattr(self, 'drivers'):
+            running_profiles = list(self.drivers.keys())
+        
+        if not running_profiles:
+            messagebox.showwarning("Cảnh báo", "Không có profile nào đang chạy!\nVui lòng khởi động ít nhất 2 profiles trước khi sử dụng Master Control.")
+            return
+        
+        # Tạo dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("🎮 Master Control Mode")
+        dialog.geometry("800x600")
+        dialog.resizable(True, True)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Main frame
+        main_frame = tk.Frame(dialog, bg='#f0f0f0')
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        # Title
+        title_label = tk.Label(main_frame, text="🎮 Master Control Mode", 
+                              font=('Segoe UI', 18, 'bold'), bg='#f0f0f0')
+        title_label.pack(pady=(0, 20))
+        
+        # Description
+        desc_label = tk.Label(main_frame, 
+                             text="Chọn 1 profile làm Master, các profile khác sẽ làm theo hành động của Master",
+                             font=('Segoe UI', 10), bg='#f0f0f0', fg='#666')
+        desc_label.pack(pady=(0, 20))
+        
+        # Master Profile Selection
+        master_frame = tk.LabelFrame(main_frame, text="🎯 Chọn Master Profile", 
+                                    font=('Segoe UI', 12, 'bold'), bg='#f0f0f0')
+        master_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        master_var = tk.StringVar()
+        master_combo = ttk.Combobox(master_frame, textvariable=master_var, 
+                                   values=running_profiles, state="readonly",
+                                   font=('Segoe UI', 10))
+        master_combo.pack(padx=10, pady=10, fill=tk.X)
+        
+        # Slave Profiles Selection
+        slave_frame = tk.LabelFrame(main_frame, text="👥 Chọn Slave Profiles", 
+                                   font=('Segoe UI', 12, 'bold'), bg='#f0f0f0')
+        slave_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        
+        # Listbox for slave profiles
+        slave_listbox = tk.Listbox(slave_frame, selectmode=tk.MULTIPLE, 
+                                  font=('Consolas', 10), height=8)
+        slave_listbox.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Populate slave profiles (exclude master)
+        for profile in running_profiles:
+            slave_listbox.insert(tk.END, profile)
+        
+        # Select all by default
+        slave_listbox.select_set(0, tk.END)
+        
+        # Control Options
+        control_frame = tk.LabelFrame(main_frame, text="⚙️ Tùy chọn điều khiển", 
+                                     font=('Segoe UI', 12, 'bold'), bg='#f0f0f0')
+        control_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # Delay between actions
+        delay_frame = tk.Frame(control_frame, bg='#f0f0f0')
+        delay_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        tk.Label(delay_frame, text="Độ trễ giữa các hành động (giây):", 
+                font=('Segoe UI', 10), bg='#f0f0f0').pack(side=tk.LEFT)
+        
+        delay_var = tk.StringVar(value="1")
+        delay_entry = tk.Entry(delay_frame, textvariable=delay_var, 
+                              font=('Segoe UI', 10), width=10)
+        delay_entry.pack(side=tk.LEFT, padx=(10, 0))
+        
+        # Sync options
+        sync_frame = tk.Frame(control_frame, bg='#f0f0f0')
+        sync_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        sync_clicks_var = tk.BooleanVar(value=True)
+        sync_clicks_check = tk.Checkbutton(sync_frame, text="Đồng bộ clicks", 
+                                          variable=sync_clicks_var, 
+                                          font=('Segoe UI', 10), bg='#f0f0f0')
+        sync_clicks_check.pack(side=tk.LEFT)
+        
+        sync_scrolls_var = tk.BooleanVar(value=True)
+        sync_scrolls_check = tk.Checkbutton(sync_frame, text="Đồng bộ scrolls", 
+                                           variable=sync_scrolls_var, 
+                                           font=('Segoe UI', 10), bg='#f0f0f0')
+        sync_scrolls_check.pack(side=tk.LEFT, padx=(20, 0))
+        
+        sync_keys_var = tk.BooleanVar(value=True)
+        sync_keys_check = tk.Checkbutton(sync_frame, text="Đồng bộ keystrokes", 
+                                        variable=sync_keys_var, 
+                                        font=('Segoe UI', 10), bg='#f0f0f0')
+        sync_keys_check.pack(side=tk.LEFT, padx=(20, 0))
+        
+        # Status and Logs
+        status_frame = tk.LabelFrame(main_frame, text="📊 Trạng thái & Logs", 
+                                    font=('Segoe UI', 12, 'bold'), bg='#f0f0f0')
+        status_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        
+        status_text = tk.Text(status_frame, height=8, font=('Consolas', 9), 
+                             bg='#f8f9fa', fg='#212529')
+        status_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Buttons
+        buttons_frame = tk.Frame(main_frame, bg='#f0f0f0')
+        buttons_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        def start_master_control():
+            master_profile = master_var.get()
+            if not master_profile:
+                messagebox.showerror("Lỗi", "Vui lòng chọn Master Profile!")
+                return
+            
+            selected_slaves = [slave_listbox.get(i) for i in slave_listbox.curselection()]
+            if not selected_slaves:
+                messagebox.showerror("Lỗi", "Vui lòng chọn ít nhất 1 Slave Profile!")
+                return
+            
+            if master_profile in selected_slaves:
+                messagebox.showerror("Lỗi", "Master Profile không thể là Slave Profile!")
+                return
+            
+            try:
+                delay = float(delay_var.get())
+            except ValueError:
+                delay = 1.0
+            
+            sync_options = {
+                'clicks': sync_clicks_var.get(),
+                'scrolls': sync_scrolls_var.get(),
+                'keys': sync_keys_var.get()
+            }
+            
+            # Confirm
+            confirm_msg = f"""Bắt đầu Master Control Mode?
+
+🎯 Master: {master_profile}
+👥 Slaves: {len(selected_slaves)} profiles
+⏱️ Delay: {delay} giây
+🔄 Sync: {', '.join([k for k, v in sync_options.items() if v])}
+
+Bạn có muốn tiếp tục?"""
+            
+            if messagebox.askyesno("Xác nhận", confirm_msg):
+                dialog.destroy()
+                self.start_master_control(master_profile, selected_slaves, delay, sync_options, status_text)
+        
+        def stop_master_control():
+            if hasattr(self, 'master_control_active') and self.master_control_active:
+                self.stop_master_control()
+                status_text.insert(tk.END, "🛑 Master Control đã dừng\n")
+                status_text.see(tk.END)
+            else:
+                messagebox.showinfo("Thông báo", "Master Control chưa được khởi động")
+        
+        start_btn = tk.Button(buttons_frame, text="🚀 Bắt đầu Master Control", 
+                             command=start_master_control, font=('Segoe UI', 11, 'bold'),
+                             bg='#28a745', fg='white', padx=20, pady=5)
+        start_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        stop_btn = tk.Button(buttons_frame, text="🛑 Dừng Master Control", 
+                            command=stop_master_control, font=('Segoe UI', 11),
+                            bg='#dc3545', fg='white', padx=20, pady=5)
+        stop_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        cancel_btn = tk.Button(buttons_frame, text="❌ Hủy", 
+                              command=dialog.destroy, font=('Segoe UI', 11),
+                              bg='#6c757d', fg='white', padx=20, pady=5)
+        cancel_btn.pack(side=tk.LEFT)
+        
+        # Bind Enter key
+        dialog.bind('<Return>', lambda e: start_master_control())
+        master_combo.focus()
+    
+    def start_master_control(self, master_profile, slave_profiles, delay, sync_options, status_text):
+        """Bắt đầu Master Control Mode"""
+        try:
+            print(f"🎮 [MASTER-CONTROL] Bắt đầu Master Control Mode")
+            print(f"🎯 [MASTER-CONTROL] Master: {master_profile}")
+            print(f"👥 [MASTER-CONTROL] Slaves: {slave_profiles}")
+            print(f"⏱️ [MASTER-CONTROL] Delay: {delay}s")
+            print(f"🔄 [MASTER-CONTROL] Sync options: {sync_options}")
+            
+            # Initialize master control state
+            self.master_control_active = True
+            self.master_profile = master_profile
+            self.slave_profiles = slave_profiles
+            self.master_delay = delay
+            self.sync_options = sync_options
+            self.master_control_thread = None
+            
+            # Log status
+            status_text.insert(tk.END, f"🎮 Master Control Mode đã khởi động\n")
+            status_text.insert(tk.END, f"🎯 Master: {master_profile}\n")
+            status_text.insert(tk.END, f"👥 Slaves: {', '.join(slave_profiles)}\n")
+            status_text.insert(tk.END, f"⏱️ Delay: {delay}s\n")
+            status_text.insert(tk.END, f"🔄 Sync: {', '.join([k for k, v in sync_options.items() if v])}\n")
+            status_text.insert(tk.END, "=" * 50 + "\n")
+            status_text.see(tk.END)
+            
+            # Start monitoring thread
+            self.master_control_thread = threading.Thread(target=self._master_control_monitor, daemon=True)
+            self.master_control_thread.start()
+            
+            # Update status
+            if hasattr(self, 'status_label'):
+                self.status_label.config(text=f"🎮 Master Control: {master_profile} → {len(slave_profiles)} slaves")
+            
+        except Exception as e:
+            print(f"❌ [MASTER-CONTROL] Lỗi khởi động: {e}")
+            status_text.insert(tk.END, f"❌ Lỗi khởi động Master Control: {e}\n")
+            status_text.see(tk.END)
+    
+    def stop_master_control(self):
+        """Dừng Master Control Mode"""
+        try:
+            print(f"🛑 [MASTER-CONTROL] Dừng Master Control Mode")
+            self.master_control_active = False
+            self.master_profile = None
+            self.slave_profiles = []
+            self.master_control_thread = None
+            
+            # Update status
+            if hasattr(self, 'status_label'):
+                self.status_label.config(text="🎮 Master Control đã dừng")
+                
+        except Exception as e:
+            print(f"❌ [MASTER-CONTROL] Lỗi dừng: {e}")
+    
+    def _master_control_monitor(self):
+        """Monitor Master Profile và đồng bộ hành động"""
+        try:
+            print(f"🔍 [MASTER-CONTROL] Bắt đầu monitor Master Profile")
+            
+            while self.master_control_active:
+                try:
+                    # Check if master profile is still running
+                    if not hasattr(self, 'drivers') or self.master_profile not in self.drivers:
+                        print(f"⚠️ [MASTER-CONTROL] Master profile {self.master_profile} không còn chạy")
+                        break
+                    
+                    master_driver = self.drivers[self.master_profile]
+                    
+                    # Get master window position and size
+                    master_window = master_driver.get_window_position()
+                    master_size = master_driver.get_window_size()
+                    
+                    # Monitor for actions (simplified - in real implementation, you'd use more sophisticated monitoring)
+                    # For now, we'll simulate by checking if master window is active
+                    try:
+                        # Check if master window is focused
+                        current_url = master_driver.current_url
+                        if current_url and 'tiktok.com' in current_url:
+                            # Simulate action sync (in real implementation, you'd capture actual mouse/keyboard events)
+                            self._sync_actions_to_slaves()
+                    except Exception as e:
+                        print(f"⚠️ [MASTER-CONTROL] Lỗi monitor master: {e}")
+                    
+                    # Sleep before next check
+                    time.sleep(0.5)  # Check every 500ms
+                    
+                except Exception as e:
+                    print(f"❌ [MASTER-CONTROL] Lỗi trong monitor loop: {e}")
+                    time.sleep(1)
+            
+            print(f"🛑 [MASTER-CONTROL] Monitor đã dừng")
+            
+        except Exception as e:
+            print(f"❌ [MASTER-CONTROL] Lỗi monitor: {e}")
+    
+    def _sync_actions_to_slaves(self):
+        """Đồng bộ hành động từ Master đến Slaves"""
+        try:
+            if not self.master_control_active or not self.slave_profiles:
+                return
+            
+            print(f"🔄 [MASTER-CONTROL] Đồng bộ hành động đến {len(self.slave_profiles)} slaves")
+            
+            for i, slave_profile in enumerate(self.slave_profiles):
+                try:
+                    if slave_profile not in self.drivers:
+                        print(f"⚠️ [MASTER-CONTROL] Slave {slave_profile} không còn chạy")
+                        continue
+                    
+                    slave_driver = self.drivers[slave_profile]
+                    
+                    # Apply delay between slaves
+                    if i > 0:
+                        time.sleep(self.master_delay)
+                    
+                    # Sync actions based on options
+                    if self.sync_options.get('clicks', False):
+                        self._sync_clicks(slave_driver)
+                    
+                    if self.sync_options.get('scrolls', False):
+                        self._sync_scrolls(slave_driver)
+                    
+                    if self.sync_options.get('keys', False):
+                        self._sync_keys(slave_driver)
+                    
+                    print(f"✅ [MASTER-CONTROL] Đã đồng bộ {slave_profile}")
+                    
+                except Exception as e:
+                    print(f"❌ [MASTER-CONTROL] Lỗi đồng bộ {slave_profile}: {e}")
+                    
+        except Exception as e:
+            print(f"❌ [MASTER-CONTROL] Lỗi sync actions: {e}")
+    
+    def _sync_clicks(self, slave_driver):
+        """Đồng bộ clicks (simplified)"""
+        try:
+            # In real implementation, you'd capture actual click coordinates from master
+            # and apply them to slave with appropriate scaling/offset
+            pass
+        except Exception as e:
+            print(f"❌ [MASTER-CONTROL] Lỗi sync clicks: {e}")
+    
+    def _sync_scrolls(self, slave_driver):
+        """Đồng bộ scrolls (simplified)"""
+        try:
+            # In real implementation, you'd capture scroll events from master
+            # and apply them to slave
+            pass
+        except Exception as e:
+            print(f"❌ [MASTER-CONTROL] Lỗi sync scrolls: {e}")
+    
+    def _sync_keys(self, slave_driver):
+        """Đồng bộ keystrokes (simplified)"""
+        try:
+            # In real implementation, you'd capture key events from master
+            # and apply them to slave
+            pass
+        except Exception as e:
+            print(f"❌ [MASTER-CONTROL] Lỗi sync keys: {e}")
     
     def _cleanup_stopped_drivers(self):
         """Dọn dẹp drivers đã bị dừng"""
@@ -2231,12 +3361,12 @@ class ModernChromeProfileManager:
         self.show_create_profile_dialog()
     
     def show_create_profile_dialog(self):
-        """Hiển thị dialog tạo profile"""
+        """Hiển thị dialog tạo profile với layout mới"""
         # Tạo cửa sổ dialog
         dialog = tk.Toplevel(self.root)
-        dialog.title("🆕 Tạo Profile Mới")
-        dialog.geometry("500x450")  # Giảm kích thước để cân bằng
-        dialog.resizable(False, False)  # Không cho resize để giữ layout
+        dialog.title("Create profile")
+        dialog.geometry("1000x700")  # Kích thước lớn hơn để chứa layout mới
+        dialog.resizable(True, True)
         dialog.transient(self.root)
         dialog.grab_set()
         
@@ -2246,131 +3376,577 @@ class ModernChromeProfileManager:
         y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
         dialog.geometry(f"+{x}+{y}")
         
-        # Frame chính (loại bỏ scrollbar để đơn giản hóa)
-        main_frame = ttk.Frame(dialog, padding="15")
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # Header frame
+        header_frame = ttk.Frame(dialog, padding="10")
+        header_frame.pack(fill=tk.X)
         
-        # Tiêu đề
-        title_label = ttk.Label(main_frame, text="Tạo Profile Chrome Mới", 
-                               font=("Segoe UI", 14, "bold"))
-        title_label.pack(pady=(0, 15))  # Giảm từ 20 xuống 15
+        # Title và input
+        title_frame = ttk.Frame(header_frame)
+        title_frame.pack(fill=tk.X)
         
-        # Thông tin profile
-        info_frame = ttk.LabelFrame(main_frame, text="📋 Thông tin Profile", padding="12")
-        info_frame.pack(fill=tk.X, pady=(0, 12))  # Giảm padding và spacing
+        ttk.Label(title_frame, text="Create profile", font=("Segoe UI", 16, "bold")).pack(side=tk.LEFT)
         
-        # Tên profile
-        ttk.Label(info_frame, text="Tên Profile:", font=("Segoe UI", 10, "bold")).pack(anchor=tk.W, pady=(0, 3))
-        name_entry = ttk.Entry(info_frame, width=50, font=("Segoe UI", 10))
-        name_entry.pack(fill=tk.X, pady=(0, 5))
+        # Tự động tạo tên profile ngẫu nhiên
+        import random, time
+        random_num = random.randint(100000, 999999)
+        timestamp = int(time.time()) % 10000
+        auto_name = f"P-{random_num}-{timestamp:04d}"
         
-        # Gợi ý tên
-        ttk.Label(info_frame, text="Gợi ý: Profile 1, Profile 2, TikTok_1, Instagram_1...", 
-                 font=("Segoe UI", 9), foreground="gray").pack(anchor=tk.W, pady=(0, 8))
+        name_var = tk.StringVar(value=auto_name)
+        name_entry = ttk.Entry(title_frame, textvariable=name_var, font=("Segoe UI", 12), width=25)
+        name_entry.pack(side=tk.LEFT, padx=(20, 10))
         
-        # Profile gốc
-        ttk.Label(info_frame, text="Profile gốc:", font=("Segoe UI", 10, "bold")).pack(anchor=tk.W, pady=(0, 3))
-        source_var = tk.StringVar(value="Default")
-        source_combo = ttk.Combobox(info_frame, textvariable=source_var, width=47, font=("Segoe UI", 10))
+        # Profile type dropdown & Template dropdown
+        profile_type_var = tk.StringVar(value="Work (US/UK)")
+        profile_type_combo = ttk.Combobox(title_frame, textvariable=profile_type_var, 
+                                        values=["Work (US/UK)", "Công việc (VN)"], 
+                                        width=15, state="readonly")
+        profile_type_combo.pack(side=tk.LEFT, padx=(0, 20))
         
-        # Lấy danh sách profiles hiện có
-        try:
-            existing_profiles = self.manager.get_all_profiles()
-            source_combo['values'] = ["Default"] + existing_profiles
-        except:
-            source_combo['values'] = ["Default", "Profile 1", "Profile 2", "Profile 3"]
+        template_var = tk.StringVar(value="Builtin: Work (US/UK)")
+        template_combo = ttk.Combobox(title_frame, textvariable=template_var, width=18, state="readonly")
+        template_combo.pack(side=tk.LEFT, padx=(0, 10))
         
-        source_combo.pack(fill=tk.X, pady=(0, 5))
+        # Template logic (định nghĩa schema riêng của ứng dụng)
+        # Schema v1: { name, software{user_agent, auto_language, webrtc_policy, startup_url}, hardware{canvas_noise, webgl_image_noise, client_rect_noise, audio_noise, webgl_meta_masked, media_devices_masked} }
+        def get_builtin_templates():
+            return [
+                {
+                    'name': 'Builtin: Work (US/UK)',
+                    'software': {
+                        'user_agent': '',
+                        'auto_language': True,
+                        'webrtc_policy': 'default_public_interface_only',
+                        'startup_url': ''
+                    },
+                    'hardware': {
+                        'canvas_noise': 'Off',
+                        'webgl_image_noise': 'Off',
+                        'client_rect_noise': 'Off',
+                        'audio_noise': 'On',
+                        'webgl_meta_masked': True,
+                        'media_devices_masked': True
+                    }
+                }
+            ]
+
+        def load_templates_into_combo():
+            try:
+                import os, json
+                template_dir = os.path.join('data', 'templates')
+                items = [t['name'] for t in get_builtin_templates()]
+                if os.path.exists(template_dir):
+                    for fn in os.listdir(template_dir):
+                        if fn.endswith('.json'):
+                            try:
+                                with open(os.path.join(template_dir, fn), 'r', encoding='utf-8') as f:
+                                    data = json.load(f)
+                                    name = str(data.get('name') or fn.replace('.json', ''))
+                                    items.append(name)
+                            except Exception:
+                                continue
+                if not items:
+                    items = ["Builtin: Work (US/UK)"]
+                template_combo['values'] = items
+                if items:
+                    template_var.set(items[0])
+            except Exception:
+                template_combo['values'] = ["Builtin: Work (US/UK)"]
+                template_var.set("Builtin: Work (US/UK)")
+        load_templates_into_combo()
         
-        # Giải thích
-        ttk.Label(info_frame, text="Profile gốc sẽ được sao chép để tạo profile mới", 
-                 font=("Segoe UI", 9), foreground="gray").pack(anchor=tk.W)
+        # Tuỳ chọn tạo tối giản (không ghi vào Default trước khi khởi động)
+        minimal_var = tk.BooleanVar(value=True)
+        minimal_chk = ttk.Checkbutton(title_frame, text="Tối giản (không ghi vào Default trước khi khởi động)", variable=minimal_var)
+        minimal_chk.pack(side=tk.RIGHT, padx=(10, 0))
+
+        # Create button
+        create_btn = ttk.Button(title_frame, text="Tạo", command=lambda: create_profile(), style="Accent.TButton")
+        create_btn.pack(side=tk.RIGHT)
         
-        # Stealth Configuration
-        stealth_frame = ttk.LabelFrame(main_frame, text="🥷 Cấu hình Stealth", padding="10")
-        stealth_frame.pack(fill=tk.X, pady=(0, 10))
+        # Info banner
+        info_frame = ttk.Frame(header_frame)
+        info_frame.pack(fill=tk.X, pady=(10, 0))
         
-        # Checkbox sử dụng stealth
-        use_stealth_var = tk.BooleanVar(value=False)
-        stealth_check = ttk.Checkbutton(stealth_frame, text="Sử dụng cấu hình Stealth", 
-                                      variable=use_stealth_var, command=lambda: toggle_stealth_options())
-        stealth_check.pack(anchor=tk.W, pady=(0, 5))
+        banner = ttk.Frame(info_frame, style="Info.TFrame")
+        banner.pack(fill=tk.X, pady=(0, 10))
         
-        # Frame cho stealth options
-        stealth_options_frame = ttk.Frame(stealth_frame)
+        info_text = "Công cụ cung cấp cấu hình được đề xuất cho noise hardware và hỗ trợ trình duyệt antidetect như MutliLogin và GoLogin."
+        ttk.Label(banner, text=info_text, font=("Segoe UI", 9), foreground="white", wraplength=800).pack(padx=10, pady=5)
         
-        # Stealth config selection
-        config_select_frame = ttk.Frame(stealth_options_frame)
-        config_select_frame.pack(fill=tk.X, pady=(0, 10))
+        # Main content frame
+        main_frame = ttk.Frame(dialog)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
         
-        ttk.Label(config_select_frame, text="Cấu hình Stealth:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(0, 10))
-        stealth_config_var = tk.StringVar(value="Default")
-        stealth_config_combo = ttk.Combobox(config_select_frame, textvariable=stealth_config_var, width=25)
+        # Left panel với tabs
+        left_panel = ttk.Frame(main_frame)
+        left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
         
-        # Load stealth configs
-        try:
-            stealth_configs = self.manager.get_stealth_configs_list()
-            stealth_config_combo['values'] = ["Default"] + stealth_configs
-        except:
-            stealth_config_combo['values'] = ["Default"]
+        # Notebook cho tabs
+        notebook = ttk.Notebook(left_panel)
+        notebook.pack(fill=tk.BOTH, expand=True)
         
-        stealth_config_combo.pack(side=tk.LEFT, padx=(0, 10))
+        # Right panel - Current information chung
+        right_panel = ttk.Frame(main_frame)
+        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         
-        # Button để tạo stealth config mới
-        ttk.Button(config_select_frame, text="⚙️ Tạo mới", 
-                  command=lambda: self.show_stealth_config_dialog()).pack(side=tk.LEFT)
+        # Tạo frame có viền cho Current information
+        info_container = ttk.LabelFrame(right_panel, text="Current information", padding="10")
+        info_container.pack(fill=tk.BOTH, expand=True, padx=(0, 0), pady=(0, 0))
         
-        # Quick stealth settings
-        quick_frame = ttk.LabelFrame(stealth_options_frame, text="⚡ Cài đặt nhanh", padding="10")
-        quick_frame.pack(fill=tk.X, pady=(0, 10))
+        # Tạo frame có thể scroll cho Current information
+        info_frame = ttk.Frame(info_container)
+        info_frame.pack(fill=tk.BOTH, expand=True)
         
-        # CPU và Memory
-        resource_frame = ttk.Frame(quick_frame)
-        resource_frame.pack(fill=tk.X, pady=(0, 5))
+        # Canvas và Scrollbar cho Current information
+        canvas = tk.Canvas(info_frame, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(info_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
         
-        # CPU Cores
-        cpu_frame = ttk.Frame(resource_frame)
-        cpu_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
         
-        ttk.Label(cpu_frame, text="CPU Cores:", font=("Segoe UI", 9, "bold")).pack(anchor=tk.W)
-        create_cpu_cores = tk.StringVar(value="2")
-        cpu_spinbox = ttk.Spinbox(cpu_frame, from_=1, to=8, textvariable=create_cpu_cores, width=8)
-        cpu_spinbox.pack(anchor=tk.W, pady=(2, 0))
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
         
-        # Memory
-        memory_frame = ttk.Frame(resource_frame)
-        memory_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
         
-        ttk.Label(memory_frame, text="Memory (GB):", font=("Segoe UI", 9, "bold")).pack(anchor=tk.W)
-        create_memory = tk.StringVar(value="1.0")
-        memory_spinbox = ttk.Spinbox(memory_frame, from_=0.5, to=8.0, increment=0.5, textvariable=create_memory, width=8)
-        memory_spinbox.pack(anchor=tk.W, pady=(2, 0))
+        # Bind mousewheel để scroll
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
         
-        # Stealth features
-        features_frame = ttk.Frame(quick_frame)
-        features_frame.pack(fill=tk.X, pady=(5, 0))
+        # Function để update Current information sẽ được định nghĩa sau khi tất cả biến đã được tạo
         
-        create_disable_webrtc = tk.BooleanVar(value=True)
-        ttk.Checkbutton(features_frame, text="Disable WebRTC", variable=create_disable_webrtc).pack(side=tk.LEFT, padx=(0, 15))
+        # Tạo biến hardware trước để dùng chung
+        # Hardware variables (định nghĩa trước để dùng trong tất cả tabs)
+        screen_var = tk.StringVar(value="Real")
+        canvas_var = tk.StringVar(value="Off")
+        client_var = tk.StringVar(value="Off")
+        webgl_img_var = tk.StringVar(value="Off")
+        audio_var = tk.StringVar(value="On")
+        webgl_masked_var = tk.BooleanVar(value=True)
+        webgl_vendor_var = tk.StringVar(value="Google Inc. (NVIDIA)")
+        webgl_renderer_var = tk.StringVar(value="ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)")
+        media_masked_var = tk.BooleanVar(value=True)
+        audio_inputs_var = tk.StringVar(value="2")
+        audio_outputs_var = tk.StringVar(value="0")
+        video_inputs_var = tk.StringVar(value="0")
+        cpu_var = tk.StringVar(value="8")
+        mem_var = tk.StringVar(value="16")
+        # Tạo MAC address ngẫu nhiên cho profile mới
+        import random, os
+        def generate_random_mac():
+            """Tạo MAC address ngẫu nhiên theo chuẩn locally administered, unicast"""
+            b = bytearray(os.urandom(6))
+            b[0] = (b[0] | 0x02) & 0xFE
+            return ":".join(f"{x:02X}" for x in b)
         
-        create_disable_canvas = tk.BooleanVar(value=True)
-        ttk.Checkbutton(features_frame, text="Disable Canvas", variable=create_disable_canvas).pack(side=tk.LEFT, padx=(0, 15))
+        mac_var = tk.StringVar(value=generate_random_mac())
         
-        create_disable_webgl = tk.BooleanVar(value=True)
-        ttk.Checkbutton(features_frame, text="Disable WebGL", variable=create_disable_webgl).pack(side=tk.LEFT)
+        # Software variables (định nghĩa trước để dùng trong tất cả tabs)
+        ua_var = tk.StringVar(value="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36")
+        os_var = tk.StringVar(value="Windows 11")
+        os_bit_var = tk.StringVar(value="64 bit")
+        lang_var = tk.StringVar(value="en-US")
+        url_var = tk.StringVar(value="")
+        webrtc_var = tk.StringVar(value="default_public_interface_only")
+        os_font_var = tk.StringVar(value="Real")
+        
+        # Connection variables
+        proxy_type_var = tk.StringVar(value="Without Proxy")
+        timezone_var = tk.StringVar(value="Base on IP")
+        webrtc_ip_var = tk.StringVar(value="Base on IP")
+        geo_var = tk.StringVar(value="Base on IP")
+        tcp_var = tk.BooleanVar(value=False)
+        maintain_var = tk.BooleanVar(value=False)
+        
+        # Quick action variables
+        browser_var = tk.StringVar(value="Chrome")
+        taskbar_var = tk.StringVar(value="")
+        
+        # Additional variables needed for Current information
+        sw_browser_var = tk.StringVar(value="Chrome")
+        browser_version_var = tk.StringVar(value="139.0.7258.139")
+        edit_ua_var = tk.BooleanVar(value=False)
+        auto_lang_var = tk.BooleanVar(value=True)
+        
+        # Quick action tab
+        quick_frame = ttk.Frame(notebook, padding="20")
+        notebook.add(quick_frame, text="Quick action")
+        
+        # Quick action chỉ có left frame
+        quick_left_frame = ttk.Frame(quick_frame)
+        quick_left_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Proxy type
+        ttk.Label(quick_left_frame, text="Proxy type:").grid(row=0, column=0, sticky='w', pady=(0, 5))
+        proxy_type_combo = ttk.Combobox(quick_left_frame, textvariable=proxy_type_var, state='readonly', values=['Without Proxy', 'HTTP', 'SOCKS5'], width=20)
+        proxy_type_combo.grid(row=0, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Buttons
+        button_frame = ttk.Frame(quick_left_frame)
+        button_frame.grid(row=1, column=0, columnspan=2, sticky='w', pady=(5, 10))
+        ttk.Button(button_frame, text="Kiểm tra", width=10).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(button_frame, text="Thư viện proxy", width=15).pack(side=tk.LEFT)
+        
+        # Browser
+        ttk.Label(quick_left_frame, text="Trình duyệt:").grid(row=2, column=0, sticky='w', pady=(0, 5))
+        browser_combo = ttk.Combobox(quick_left_frame, textvariable=browser_var, state='readonly', values=['Chrome', 'Firefox', 'Edge'], width=20)
+        browser_combo.grid(row=2, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Taskbar title
+        ttk.Label(quick_left_frame, text="Tiêu đề ở taskbar (3 ký tự):").grid(row=3, column=0, sticky='w', pady=(0, 5))
+        ttk.Entry(quick_left_frame, textvariable=taskbar_var, width=20).grid(row=3, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Description
+        desc_text = "Nếu để trống sẽ hiển thị tăng dần theo số lần mở profile"
+        ttk.Label(quick_left_frame, text=desc_text, font=("Segoe UI", 9), foreground="gray", wraplength=300).grid(row=4, column=0, columnspan=2, sticky='w', pady=(0, 10))
+        
+        # Generate button đã được di chuyển ra ngoài
+        
+        # Quick action tab chỉ có left frame, không có right frame
+        # Current information sẽ được hiển thị ở right panel chung
+        
+        # Connection tab
+        connection_frame = ttk.Frame(notebook, padding="20")
+        notebook.add(connection_frame, text="Connection")
+        
+        # Connection chỉ có left frame
+        conn_left_frame = ttk.Frame(connection_frame)
+        conn_left_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Timezone
+        ttk.Label(conn_left_frame, text="Timezone:").grid(row=0, column=0, sticky='w', pady=(0, 5))
+        timezone_combo = ttk.Combobox(conn_left_frame, textvariable=timezone_var, state='readonly', values=['Base on IP', 'UTC', 'GMT'], width=20)
+        timezone_combo.grid(row=0, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # WebRTC IP
+        ttk.Label(conn_left_frame, text="WebRTC IP:").grid(row=1, column=0, sticky='w', pady=(0, 5))
+        webrtc_ip_combo = ttk.Combobox(conn_left_frame, textvariable=webrtc_ip_var, state='readonly', values=['Base on IP', 'Disable', 'Default'], width=20)
+        webrtc_ip_combo.grid(row=1, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Checkboxes
+        ttk.Checkbutton(conn_left_frame, text="Cho phép TCP", variable=tcp_var).grid(row=2, column=0, columnspan=2, sticky='w', pady=(5, 0))
+        tcp_desc = ttk.Label(conn_left_frame, text="Sử dụng cho gọi điện online qua fb, tele,...", font=("Segoe UI", 9), foreground="gray")
+        tcp_desc.grid(row=3, column=0, columnspan=2, sticky='w', pady=(0, 5))
+        
+        ttk.Checkbutton(conn_left_frame, text="Duy trì kết nối, không ngắt đột ngột", variable=maintain_var).grid(row=4, column=0, columnspan=2, sticky='w', pady=(5, 0))
+        maintain_desc = ttk.Label(conn_left_frame, text="Để treo các kèo như Gradient,...", font=("Segoe UI", 9), foreground="gray")
+        maintain_desc.grid(row=5, column=0, columnspan=2, sticky='w', pady=(0, 5))
+        
+        # GEO Location
+        ttk.Label(conn_left_frame, text="GEO Location:").grid(row=6, column=0, sticky='w', pady=(0, 5))
+        geo_combo = ttk.Combobox(conn_left_frame, textvariable=geo_var, state='readonly', values=['Base on IP', 'Manual'], width=20)
+        geo_combo.grid(row=6, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Generate button đã được di chuyển ra ngoài
+        
+        # Connection tab chỉ có left frame
+        # Current information sẽ được hiển thị ở right panel chung
+        
+        # Software tab
+        software_frame = ttk.Frame(notebook, padding="20")
+        notebook.add(software_frame, text="Software")
+        
+        # Software chỉ có left frame
+        sw_left_frame = ttk.Frame(software_frame)
+        sw_left_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Browser
+        ttk.Label(sw_left_frame, text="Trình duyệt:").grid(row=0, column=0, sticky='w', pady=(0, 5))
+        sw_browser_combo = ttk.Combobox(sw_left_frame, textvariable=sw_browser_var, state='readonly', values=['Chrome', 'Firefox', 'Edge'], width=20)
+        sw_browser_combo.grid(row=0, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Browser version
+        ttk.Entry(sw_left_frame, textvariable=browser_version_var, width=20).grid(row=0, column=2, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Operating System
+        ttk.Label(sw_left_frame, text="Hệ điều hành:").grid(row=1, column=0, sticky='w', pady=(0, 5))
+        os_combo = ttk.Combobox(sw_left_frame, textvariable=os_var, state='readonly', values=['Windows 11', 'Windows 10', 'macOS', 'Linux'], width=20)
+        os_combo.grid(row=1, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # OS bit
+        os_bit_combo = ttk.Combobox(sw_left_frame, textvariable=os_bit_var, state='readonly', values=['64 bit', '32 bit'], width=10)
+        os_bit_combo.grid(row=1, column=2, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # User agent
+        ttk.Label(sw_left_frame, text="User agent:").grid(row=2, column=0, sticky='w', pady=(0, 5))
+        ua_entry = ttk.Entry(sw_left_frame, textvariable=ua_var, width=50)
+        ua_entry.grid(row=2, column=1, columnspan=2, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Edit user agent checkbox
+        ttk.Checkbutton(sw_left_frame, text="Sửa user agent", variable=edit_ua_var).grid(row=3, column=1, columnspan=2, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Language code
+        ttk.Label(sw_left_frame, text="Language code:").grid(row=4, column=0, sticky='w', pady=(0, 5))
+        ttk.Checkbutton(sw_left_frame, text="Auto language (Base on IP)", variable=auto_lang_var).grid(row=4, column=1, columnspan=2, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        lang_combo = ttk.Combobox(sw_left_frame, textvariable=lang_var, state='readonly', values=['en-US', 'vi-VN', 'zh-CN', 'ja-JP', 'ko-KR'], width=20)
+        lang_combo.grid(row=5, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Startup URL
+        ttk.Label(sw_left_frame, text="URL khởi động:").grid(row=6, column=0, sticky='w', pady=(0, 5))
+        url_entry = ttk.Entry(sw_left_frame, textvariable=url_var, width=50)
+        url_entry.grid(row=6, column=1, columnspan=2, sticky='w', padx=(5, 0), pady=(0, 5))
+        url_placeholder = ttk.Label(sw_left_frame, text="Eg: https://google.com https://whoer.net", font=("Segoe UI", 9), foreground="gray")
+        url_placeholder.grid(row=7, column=1, columnspan=2, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # OS Font
+        ttk.Label(sw_left_frame, text="OS Font:").grid(row=8, column=0, sticky='w', pady=(0, 5))
+        os_font_combo = ttk.Combobox(sw_left_frame, textvariable=os_font_var, state='readonly', values=['Real', 'Custom'], width=20)
+        os_font_combo.grid(row=8, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Generate button đã được di chuyển ra ngoài
+        
+        # Software tab chỉ có left frame
+        # Current information sẽ được hiển thị ở right panel chung
+        
+        # Hardware tab
+        hardware_frame = ttk.Frame(notebook, padding="20")
+        notebook.add(hardware_frame, text="Hardware")
+        
+        # Thông báo về thông tin phần cứng ngẫu nhiên
+        info_label = ttk.Label(hardware_frame, text="Phần mềm đã tạo ngẫu nhiên một thông tin phần cứng. Nếu không quá hiểu về Fingerprint, bạn có thể không quan tâm tới phần này. Các thông tin về RAM, CPU Core, Audio, Media outputs, WebGL, Tên card màn hình... đã được sinh ngẫu nhiên!", 
+                              font=("Segoe UI", 9), foreground="gray", wraplength=600)
+        info_label.pack(anchor=tk.W, pady=(0, 15))
+        
+        # Hardware chỉ có left frame
+        left_frame = ttk.Frame(hardware_frame)
+        left_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Cột trái - Cấu hình Hardware
+        # Phân giải màn hình
+        ttk.Label(left_frame, text="Phân giải màn hình:").grid(row=0, column=0, sticky='w', pady=(0, 5))
+        ttk.Entry(left_frame, textvariable=screen_var, width=20).grid(row=0, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Canvas noise
+        ttk.Label(left_frame, text="Canvas noise:").grid(row=1, column=0, sticky='w', pady=(0, 5))
+        canvas_combo = ttk.Combobox(left_frame, textvariable=canvas_var, state='readonly', values=['Off', 'On'], width=17)
+        canvas_combo.grid(row=1, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Client rect noise
+        ttk.Label(left_frame, text="Client rect noise:").grid(row=2, column=0, sticky='w', pady=(0, 5))
+        client_combo = ttk.Combobox(left_frame, textvariable=client_var, state='readonly', values=['Off', 'On'], width=17)
+        client_combo.grid(row=2, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # WebGL image noise
+        ttk.Label(left_frame, text="WebGL image noise:").grid(row=3, column=0, sticky='w', pady=(0, 5))
+        webgl_img_combo = ttk.Combobox(left_frame, textvariable=webgl_img_var, state='readonly', values=['Off', 'On'], width=17)
+        webgl_img_combo.grid(row=3, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Audio noise
+        ttk.Label(left_frame, text="Audio noise:").grid(row=4, column=0, sticky='w', pady=(0, 5))
+        audio_combo = ttk.Combobox(left_frame, textvariable=audio_var, state='readonly', values=['Off', 'On'], width=17)
+        audio_combo.grid(row=4, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # WebGL Meta masked
+        ttk.Checkbutton(left_frame, text="✔ WebGL Meta masked", variable=webgl_masked_var).grid(row=5, column=0, columnspan=2, sticky='w', pady=(5, 5))
+        
+        # WebGL Vendor
+        ttk.Label(left_frame, text="WebGL Vendor:").grid(row=6, column=0, sticky='w', pady=(0, 5))
+        ttk.Entry(left_frame, textvariable=webgl_vendor_var, width=20).grid(row=6, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # WebGL Renderer
+        ttk.Label(left_frame, text="WebGL Renderer:").grid(row=7, column=0, sticky='w', pady=(0, 5))
+        ttk.Entry(left_frame, textvariable=webgl_renderer_var, width=20).grid(row=7, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Media devices masked
+        ttk.Checkbutton(left_frame, text="✔ Media devices masked (Audio inputs / Audio outputs / Video inputs)", variable=media_masked_var).grid(row=8, column=0, columnspan=2, sticky='w', pady=(5, 5))
+        
+        # Media inputs/outputs trong 1 dòng
+        media_frame = ttk.Frame(left_frame)
+        media_frame.grid(row=9, column=0, columnspan=2, sticky='w', pady=(0, 5))
+        ttk.Entry(media_frame, textvariable=audio_inputs_var, width=5).grid(row=0, column=0, padx=(0, 5))
+        ttk.Entry(media_frame, textvariable=audio_outputs_var, width=5).grid(row=0, column=1, padx=(0, 5))
+        ttk.Entry(media_frame, textvariable=video_inputs_var, width=5).grid(row=0, column=2)
+        
+        # CPU cores
+        ttk.Label(left_frame, text="CPU core:").grid(row=10, column=0, sticky='w', pady=(0, 5))
+        ttk.Entry(left_frame, textvariable=cpu_var, width=20).grid(row=10, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Memory devices
+        ttk.Label(left_frame, text="Memory devices:").grid(row=11, column=0, sticky='w', pady=(0, 5))
+        ttk.Entry(left_frame, textvariable=mem_var, width=20).grid(row=11, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # MAC address
+        ttk.Label(left_frame, text="MAC address:").grid(row=12, column=0, sticky='w', pady=(0, 5))
+        ttk.Entry(left_frame, textvariable=mac_var, width=20).grid(row=12, column=1, sticky='w', padx=(5, 0), pady=(0, 5))
+        
+        # Generate button đã được di chuyển ra ngoài
+        
+        # Hardware tab chỉ có left frame
+        # Current information sẽ được hiển thị ở right panel chung
+        
+        # Functions
+        def generate_quick_params():
+            """Tạo thông số Quick action mới"""
+            import random
+            proxy_types = ['Without Proxy', 'HTTP', 'SOCKS5']
+            browsers = ['Chrome', 'Firefox', 'Edge']
+            proxy_type_var.set(random.choice(proxy_types))
+            browser_var.set(random.choice(browsers))
+            taskbar_var.set(''.join(random.choices('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', k=3)))
+            update_current_info()  # Update Current information
+            print("✅ [GENERATE] Đã tạo thông số Quick action mới")
+        
+        def generate_connection_params():
+            """Tạo thông số Connection mới"""
+            import random
+            timezones = ['Base on IP', 'UTC', 'GMT']
+            webrtc_options = ['Base on IP', 'Disable', 'Default']
+            geo_options = ['Base on IP', 'Manual']
+            timezone_var.set(random.choice(timezones))
+            webrtc_ip_var.set(random.choice(webrtc_options))
+            geo_var.set(random.choice(geo_options))
+            tcp_var.set(random.choice([True, False]))
+            maintain_var.set(random.choice([True, False]))
+            update_current_info()  # Update Current information
+            print("✅ [GENERATE] Đã tạo thông số Connection mới")
+        
+        def generate_software_params():
+            """Tạo thông số Software mới"""
+            import random
+            browsers = ['Chrome', 'Firefox', 'Edge']
+            os_list = ['Windows 11', 'Windows 10', 'macOS', 'Linux']
+            os_bits = ['64 bit', '32 bit']
+            languages = ['en-US', 'vi-VN', 'zh-CN', 'ja-JP', 'ko-KR']
+            fonts = ['Real', 'Custom']
+            
+            sw_browser_var.set(random.choice(browsers))
+            os_var.set(random.choice(os_list))
+            os_bit_var.set(random.choice(os_bits))
+            lang_var.set(random.choice(languages))
+            os_font_var.set(random.choice(fonts))
+            
+            # Generate random browser version
+            major = random.randint(130, 140)
+            minor = random.randint(0, 9)
+            patch = random.randint(0, 999)
+            browser_version_var.set(f"{major}.{minor}.{patch}")
+            
+            update_current_info()  # Update Current information
+            print("✅ [GENERATE] Đã tạo thông số Software mới")
+        
+        def generate_new_params():
+            """Tạo thông số hardware mới"""
+            import random
+            
+            # Tạo các giá trị ngẫu nhiên
+            resolutions = ['1920x1080', '1366x768', '1440x900', '1536x864', 'Real']
+            screen_var.set(random.choice(resolutions))
+            canvas_var.set(random.choice(['Off', 'On']))
+            client_var.set(random.choice(['Off', 'On']))
+            webgl_img_var.set(random.choice(['Off', 'On']))
+            audio_var.set(random.choice(['Off', 'On']))
+            webgl_vendor_var.set(random.choice(['Google Inc. (NVIDIA)', 'Google Inc. (Intel)', 'Google Inc. (AMD)']))
+            webgl_renderer_var.set(random.choice([
+                'ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)',
+                'ANGLE (Intel, Intel(R) HD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)',
+                'ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0, D3D11)'
+            ]))
+            cpu_var.set(str(random.randint(4, 16)))
+            mem_var.set(str(random.randint(4, 32)))
+            # Tạo MAC mới
+            mac_var.set(generate_random_mac())
+            audio_inputs_var.set(str(random.randint(1, 3)))
+            audio_outputs_var.set(str(random.randint(0, 2)))
+            video_inputs_var.set(str(random.randint(0, 2)))
+            
+            update_current_info()  # Update Current information
+            print("✅ [GENERATE] Đã tạo thông số hardware mới")
+        
+        # Bind events để update Current information khi thay đổi giá trị
+        def bind_update_events():
+            # Bind tất cả biến để update Current information khi thay đổi
+            for var in [ua_var, os_var, os_bit_var, lang_var, url_var, webrtc_var, os_font_var, 
+                       proxy_type_var, timezone_var, webrtc_ip_var, geo_var, tcp_var, maintain_var,
+                       browser_var, taskbar_var, sw_browser_var, browser_version_var, edit_ua_var, auto_lang_var,
+                       screen_var, canvas_var, client_var, webgl_img_var, audio_var, webgl_masked_var,
+                       webgl_vendor_var, webgl_renderer_var, media_masked_var, audio_inputs_var,
+                       audio_outputs_var, video_inputs_var, cpu_var, mem_var, mac_var]:
+                try:
+                    var.trace('w', lambda *args: update_current_info())
+                except:
+                    pass  # Một số biến có thể không có trace method
+        
+        # Function để update Current information
+        def update_current_info():
+            # Clear existing widgets
+            for widget in scrollable_frame.winfo_children():
+                widget.destroy()
+            
+            # Current information data
+            info_data = [
+                ("User-agent:", ua_var.get()),
+                ("OS:", f"{os_var.get()} {os_bit_var.get()}"),
+                ("Proxy:", proxy_type_var.get()),
+                ("Screen:", "-1x-1"),
+                ("Timezone:", timezone_var.get()),
+                ("Font list:", os_font_var.get()),
+                ("Accept-language:", lang_var.get()),
+                ("WebRTC:", webrtc_ip_var.get()),
+                ("CPU core:", cpu_var.get()),
+                ("Device memory:", mem_var.get()),
+                ("Media audio inputs:", audio_inputs_var.get()),
+                ("Media audio outputs:", audio_outputs_var.get()),
+                ("Media video inputs:", video_inputs_var.get()),
+                ("WebGL Meta:", "Masked" if webgl_masked_var.get() else "Off"),
+                ("Canvas:", canvas_var.get()),
+                ("Client rect:", client_var.get()),
+                ("WebGL:", webgl_img_var.get()),
+                ("Audio Context:", audio_var.get())
+            ]
+            
+            for i, (label, value) in enumerate(info_data):
+                ttk.Label(scrollable_frame, text=label, font=("Segoe UI", 9, "bold")).grid(row=i, column=0, sticky='w', pady=(0, 2), padx=(0, 10))
+                ttk.Label(scrollable_frame, text=value, font=("Segoe UI", 9), foreground="gray", wraplength=300).grid(row=i, column=1, sticky='w', pady=(0, 2))
+        
+        bind_update_events()
+        
+        # Update Current information sau khi tất cả biến đã được định nghĩa
+        update_current_info()
+        
+        # Tạo button "Tạo thông số mới" ở góc dưới trái cố định
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
+        
+        def generate_all_params():
+            """Tạo thông số mới cho tab hiện tại"""
+            current_tab = notebook.index(notebook.select())
+            if current_tab == 0:  # Quick action
+                generate_quick_params()
+            elif current_tab == 1:  # Connection
+                generate_connection_params()
+            elif current_tab == 2:  # Software
+                generate_software_params()
+            elif current_tab == 3:  # Hardware
+                generate_new_params()
+        
+        generate_button = ttk.Button(button_frame, text="✖ Tạo thông số mới", command=generate_all_params, width=20)
+        generate_button.pack(side=tk.LEFT)
+        
+        def toggle_stealth_options():
+            """Toggle stealth options visibility"""
+            if use_stealth_var.get():
+                stealth_options_frame.pack(fill=tk.X, pady=(5, 0))
+            else:
+                stealth_options_frame.pack_forget()
         
         
         def create_profile():
-            print("📝 [CREATE] Mở dialog tạo profile")
-            source = source_var.get()
-            name = name_entry.get().strip()
+            """Tạo profile mới với cấu hình đầy đủ"""
+            name = name_var.get().strip()
             
             if not name:
                 messagebox.showerror("Lỗi", "Vui lòng nhập tên profile!")
                 name_entry.focus()
                 return
             
-            # Kiểm tra tên profile đã tồn tại (với force refresh)
+            # Kiểm tra tên profile đã tồn tại
             try:
                 existing_profiles = self.manager.get_all_profiles(force_refresh=True)
                 if name in existing_profiles:
@@ -2381,61 +3957,160 @@ class ModernChromeProfileManager:
                 print(f"⚠️ [CREATE] Lỗi kiểm tra profile tồn tại: {e}")
                 pass
             
-            # Tạo stealth config nếu được chọn
-            stealth_config = None
-            if use_stealth_var.get():
-                stealth_config = {
-                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
-                    'cpu_cores': int(create_cpu_cores.get()),
-                    'memory_gb': float(create_memory.get()),
-                    'screen_width': 1920,
-                    'screen_height': 1080,
-                    'disable_webrtc': create_disable_webrtc.get(),
-                    'disable_canvas': create_disable_canvas.get(),
-                    'disable_webgl': create_disable_webgl.get(),
-                    'disable_audio': False,
-                    'disable_fonts': True,
-                    'language': 'en-US',
-                    'timezone': 'UTC'
-                }
-            
-            # Tạo profile
+            # Tạo profile với profile type
             try:
-                success, message = self.manager.clone_chrome_profile(name, source)
+                # Xác định profile type từ dropdown
+                selected_type = profile_type_var.get()
+                if selected_type == "Work (US/UK)":
+                    profile_type = "work"
+                elif selected_type == "Công việc (VN)":
+                    profile_type = "cong_viec"
+                else:
+                    profile_type = "work"  # Default
+                
+                success, message = self.manager.clone_chrome_profile(name, "Default", profile_type)
                 if success:
-                    # Kiểm tra lại để đảm bảo profile thực sự được tạo
-                    import time
-                    time.sleep(0.2)  # Delay để đảm bảo file system được cập nhật
-                    
-                    # Verify profile was created (với force refresh)
-                    verification_profiles = self.manager.get_all_profiles(force_refresh=True)
-                    if name not in verification_profiles:
-                        print(f"⚠️ [CREATE] Profile {name} không được tìm thấy sau khi tạo")
-                        messagebox.showerror("Lỗi", f"Profile '{name}' không được tạo thành công!")
-                        return
-                    
-                    # Lưu stealth config nếu có (tạm thời bỏ qua vì hàm chưa được implement)
-                    if stealth_config:
-                        print(f"📝 [CREATE] Stealth config được tạo cho {name} (chưa lưu)")
-                        # TODO: Implement save_stealth_config function
+                    # Lưu cấu hình đầy đủ
+                    try:
+                        import os, json, time
+                        profile_path = os.path.join(self.manager.profiles_dir, name)
+                        settings_path = os.path.join(profile_path, 'profile_settings.json')
+                        # Luôn random trước và đẩy ngược vào UI vars để phần Hardware hiển thị đúng
+                        try:
+                            import random as _rand
+                            cpu_var.set(str(_rand.choice([2, 4, 6, 10, 12])))
+                            mem_var.set(str(_rand.choice([4, 8, 12, 24, 32])))
+                            pairs = [
+                                ("Google Inc. (NVIDIA)", "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+                                ("Google Inc. (Intel)", "ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+                                ("Google Inc. (AMD)", "ANGLE (AMD, AMD Radeon RX 6600 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+                            ]
+                            v, r = _rand.choice(pairs)
+                            webgl_vendor_var.set(v)
+                            webgl_renderer_var.set(r)
+                        except Exception:
+                            pass
+                        
+                        settings_data = {
+                            'profile_info': {
+                                'name': name,
+                                'display_name': name,  # Sử dụng tên profile làm display name
+                                'type': profile_type,
+                                'created_at': time.strftime('%Y-%m-%d %H:%M:%S')
+                            },
+                            'software': {
+                                'user_agent': ua_var.get().strip(),
+                                'language': lang_var.get().strip() or 'en-US',
+                                'startup_url': url_var.get().strip(),
+                                'webrtc_policy': webrtc_var.get(),
+                                'os_font': 'Real'
+                            },
+                            'hardware': {
+                                'screen_resolution': screen_var.get(),
+                                'canvas_noise': canvas_var.get(),
+                                'client_rect_noise': client_var.get(),
+                                'webgl_image_noise': webgl_img_var.get(),
+                                'audio_noise': audio_var.get(),
+                                'webgl_meta_masked': webgl_masked_var.get(),
+                                'webgl_vendor': webgl_vendor_var.get(),
+                                'webgl_renderer': webgl_renderer_var.get(),
+                                'media_devices_masked': media_masked_var.get(),
+                                'cpu_cores': cpu_var.get(),
+                                'device_memory': mem_var.get(),
+                                'media_audio_inputs': audio_inputs_var.get(),
+                                'media_audio_outputs': audio_outputs_var.get(),
+                                'media_video_inputs': video_inputs_var.get(),
+                                'mac_address': mac_var.get()
+                            }
+                        }
+                        # Random phần cứng khi người dùng không chỉ định rõ (tránh mặc định 8/16)
+                        try:
+                            import random as _rand
+                            cpu_val = str(settings_data['hardware'].get('cpu_cores') or '').strip()
+                            mem_val = str(settings_data['hardware'].get('device_memory') or '').strip()
+                            need_cpu_rand = (cpu_val == '' or cpu_val.lower() in ('auto', 'default', '0', 'none', 'null') or cpu_val == '8')
+                            need_mem_rand = (mem_val == '' or mem_val.lower() in ('auto', 'default', '0', 'none', 'null') or mem_val == '16')
+                            if minimal_var.get() or need_cpu_rand:
+                                # Nếu giá trị đang là 8 -> loại 8 khỏi tập chọn
+                                cpu_choices = [2, 4, 6, 8, 10, 12]
+                                if cpu_val == '8':
+                                    cpu_choices = [2, 4, 6, 10, 12]
+                                settings_data['hardware']['cpu_cores'] = str(_rand.choice(cpu_choices))
+                            if minimal_var.get() or need_mem_rand:
+                                # Nếu giá trị đang là 16 -> loại 16 khỏi tập chọn
+                                mem_choices = [4, 8, 12, 16, 24, 32]
+                                if mem_val == '16':
+                                    mem_choices = [4, 8, 12, 24, 32]
+                                settings_data['hardware']['device_memory'] = str(_rand.choice(mem_choices))
+
+                            # WebGL vendor/renderer chỉ random nếu chưa có
+                            v_now = (settings_data['hardware'].get('webgl_vendor') or '').strip()
+                            r_now = (settings_data['hardware'].get('webgl_renderer') or '').strip()
+                            if minimal_var.get() or not v_now or not r_now:
+                                pairs = [
+                                    ("Google Inc. (NVIDIA)", "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+                                    ("Google Inc. (Intel)", "ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+                                    ("Google Inc. (AMD)", "ANGLE (AMD, AMD Radeon RX 6600 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+                                ]
+                                v, r = _rand.choice(pairs)
+                                settings_data['hardware']['webgl_vendor'] = v
+                                settings_data['hardware']['webgl_renderer'] = r
+                        except Exception:
+                            pass
+                        # Áp template nếu có
+                        try:
+                            import json
+                            tpl_name = template_var.get()
+                            template_dir = os.path.join('data', 'templates')
+                            applied = False
+                            # 1) nếu user chọn builtin → áp quy tắc builtin
+                            if tpl_name.startswith('Builtin:'):
+                                # Builtin template: Work (US/UK)
+                                settings_data['software']['language'] = 'en-US'
+                                # Các mặc định hardware/software từ builtin
+                                settings_data['software'].setdefault('webrtc_policy', 'default_public_interface_only')
+                                settings_data['hardware'].setdefault('audio_noise', 'On')
+                                settings_data['hardware'].setdefault('webgl_meta_masked', True)
+                                settings_data['hardware'].setdefault('media_devices_masked', True)
+                                applied = True
+                            # 2) nếu tồn tại file template JSON trùng tên → áp file
+                            if not applied and os.path.exists(template_dir):
+                                for fn in os.listdir(template_dir):
+                                    if fn.endswith('.json'):
+                                        with open(os.path.join(template_dir, fn), 'r', encoding='utf-8') as tf:
+                                            tpl = json.load(tf)
+                                            if (tpl.get('name') or fn.replace('.json','')) == tpl_name:
+                                                tsw = tpl.get('software', {})
+                                                thw = tpl.get('hardware', {})
+                                                settings_data['software'].update({k:v for k,v in tsw.items() if v is not None})
+                                                settings_data['hardware'].update({k:v for k,v in thw.items() if v is not None})
+                                                break
+                        except Exception as _te:
+                            print(f"[TEMPLATE] Không áp được template: {_te}")
+                        
+                        os.makedirs(profile_path, exist_ok=True)
+                        with open(settings_path, 'w', encoding='utf-8') as f:
+                            json.dump(settings_data, f, ensure_ascii=False, indent=2)
+                        print(f"✅ [CREATE] Đã lưu cấu hình cho {name}")
+                    except Exception as e:
+                        print(f"⚠️ [CREATE] Không thể lưu cấu hình: {e}")
+
+                    # Nếu chế độ tối giản: xoá Local State/Preferences ở root nếu lỡ tồn tại
+                    try:
+                        if minimal_var.get():
+                            for fname in ("Local State", "Preferences"):
+                                fp = os.path.join(profile_path, fname)
+                                if os.path.exists(fp):
+                                    try:
+                                        os.remove(fp)
+                                        print(f"🧹 [MINIMAL] Đã xoá {fname} ở root: {fp}")
+                                    except Exception:
+                                        pass
+                    except Exception:
+                        pass
                     
                     messagebox.showinfo("Thành công", f"✅ Profile '{name}' đã được tạo thành công!")
                     self.refresh_profiles()
-                    
-                    # Auto-install extension for the new profile
-                    def install_extension_for_new_profile():
-                        try:
-                            success = self.manager.ensure_extension_installed(name)
-                            if success:
-                                print(f"✅ [NEW-PROFILE] SwitchyOmega 3 automatically installed for {name}")
-                            else:
-                                print(f"⚠️ [NEW-PROFILE] Failed to auto-install extension for {name}")
-                        except Exception as e:
-                            print(f"❌ [NEW-PROFILE] Error auto-installing extension: {str(e)}")
-                    
-                    # Install extension in background
-                    threading.Thread(target=install_extension_for_new_profile, daemon=True).start()
-                    
                     dialog.destroy()
                 else:
                     messagebox.showerror("Lỗi", f"❌ {message}")
@@ -2450,39 +4125,13 @@ class ModernChromeProfileManager:
         def cancel():
             dialog.destroy()
         
-        # Nút
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X, pady=(10, 0))  # Giảm padding
-        
-        # Layout buttons cân đối
-        left_btn_frame = ttk.Frame(button_frame)
-        left_btn_frame.pack(side=tk.LEFT, expand=True, fill=tk.X)
-        
-        center_btn_frame = ttk.Frame(button_frame)
-        center_btn_frame.pack(side=tk.LEFT, expand=True, fill=tk.X)
-        
-        right_btn_frame = ttk.Frame(button_frame)
-        right_btn_frame.pack(side=tk.RIGHT, expand=True, fill=tk.X)
-        
-        # Nút Hủy ở bên trái
-        cancel_btn = ttk.Button(left_btn_frame, text="❌ Hủy", command=cancel, width=15)
-        cancel_btn.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Nút Tạo hàng loạt ở giữa
-        bulk_btn = ttk.Button(center_btn_frame, text="📦 Tạo hàng loạt", command=show_bulk_create, width=15)
-        bulk_btn.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Nút Tạo ở bên phải
-        create_btn = ttk.Button(right_btn_frame, text="✅ Tạo Profile", command=create_profile, width=15)
-        create_btn.pack(side=tk.RIGHT, padx=(10, 0))
+        # Bind Enter key để tạo profile
+        dialog.bind('<Return>', lambda e: create_profile())
+        dialog.bind('<Escape>', lambda e: cancel())
         
         # Focus và bind Enter key
         name_entry.focus()
         name_entry.bind('<Return>', lambda e: create_profile())
-        dialog.bind('<Escape>', lambda e: cancel())
-        
-        # Ẩn tùy chọn stealth ban đầu
-        stealth_options_frame.pack_forget()
     
     
     def show_bulk_create_dialog(self):
@@ -2824,23 +4473,25 @@ class ModernChromeProfileManager:
         def launch_thread():
             self.status_label.config(text=f"Đang khởi động {profile_name}...")
             
-            # Lấy dữ liệu đăng nhập TikTok nếu có
+            # [DISABLED] Lấy dữ liệu đăng nhập TikTok nếu có
+            # login_data = None
+            # success, tiktok_session = self.manager.load_tiktok_session(profile_name)
+            # if success:
+            #     login_data = tiktok_session
+            #     print(f"🔐 [LAUNCH] Đã load TikTok session: {login_data.get('email', 'N/A')}")
+            #     print(f"📱 [LAUNCH] Username: {login_data.get('username', 'N/A')}")
+            #     print(f"🆔 [LAUNCH] User ID: {login_data.get('user_id', 'N/A')}")
+            # else:
+            #     print(f"⚠️ [LAUNCH] Không có TikTok session cho {profile_name}")
             login_data = None
-            success, tiktok_session = self.manager.load_tiktok_session(profile_name)
-            if success:
-                login_data = tiktok_session
-                print(f"🔐 [LAUNCH] Đã load TikTok session: {login_data.get('email', 'N/A')}")
-                print(f"📱 [LAUNCH] Username: {login_data.get('username', 'N/A')}")
-                print(f"🆔 [LAUNCH] User ID: {login_data.get('user_id', 'N/A')}")
-            else:
-                print(f"⚠️ [LAUNCH] Không có TikTok session cho {profile_name}")
             
-            # Khởi động Chrome với auto_login để tự động restore session
+            # Khởi động Chrome với auto_login để tự động restore session hoặc đăng nhập
+            # Nếu có login_data thì sẽ đăng nhập mới, nếu không có thì sẽ load session cũ
             success, result = self.manager.launch_chrome_profile(
                 profile_name, 
                 hidden=hidden, 
-                auto_login=bool(login_data), 
-                login_data=login_data
+                auto_login=False,  # Vô hiệu auto_login khi tắt load TikTok session
+                login_data=login_data  # Luôn None trong chế độ kiểm thử
             )
             
             if success:
@@ -2946,9 +4597,10 @@ class ModernChromeProfileManager:
         # Tạo dialog xác nhận
         dialog = tk.Toplevel(self.root)
         dialog.title("🗑️ Xóa Profile Hàng Loạt")
-        # Dialog settings - giảm kích thước để cân bằng
-        dialog.geometry("500x400")  # Giảm từ 600x500 xuống 500x400
-        dialog.resizable(False, False)  # Không cho resize để giữ layout cân bằng
+        # Dialog settings - tăng kích thước để hiển thị đầy đủ nút
+        dialog.geometry("720x520")
+        dialog.minsize(700, 480)
+        dialog.resizable(True, True)
         dialog.transient(self.root)
         dialog.grab_set()
         
@@ -2982,7 +4634,7 @@ class ModernChromeProfileManager:
         listbox_frame = ttk.Frame(profiles_frame)
         listbox_frame.pack(fill=tk.BOTH, expand=True)
         
-        profiles_listbox = tk.Listbox(listbox_frame, font=("Consolas", 10), height=8)
+        profiles_listbox = tk.Listbox(listbox_frame, font=("Consolas", 10), height=12)
         profiles_scrollbar = ttk.Scrollbar(listbox_frame, orient="vertical", command=profiles_listbox.yview)
         profiles_listbox.configure(yscrollcommand=profiles_scrollbar.set)
         
@@ -3015,7 +4667,7 @@ class ModernChromeProfileManager:
         
         # Buttons
         button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X, pady=(20, 0))
+        button_frame.pack(fill=tk.X, pady=(10, 0))
         
         def confirm_delete():
             if not confirm_var.get():
@@ -3036,10 +4688,10 @@ class ModernChromeProfileManager:
             dialog.destroy()
         
         # Layout buttons using grid for better control
-        cancel_btn = ttk.Button(button_frame, text="❌ Hủy", command=cancel_delete, width=15)
+        cancel_btn = ttk.Button(button_frame, text="❌ Hủy", command=cancel_delete, width=18)
         cancel_btn.grid(row=0, column=0, padx=(0, 10), sticky="ew")
         
-        delete_btn = ttk.Button(button_frame, text="🗑️ Xóa Vĩnh Viễn", command=confirm_delete, width=20)
+        delete_btn = ttk.Button(button_frame, text="🗑️ Xóa Vĩnh Viễn", command=confirm_delete, width=22)
         delete_btn.grid(row=0, column=1, padx=(10, 0), sticky="ew")
         
         # Configure grid weights
@@ -3250,7 +4902,7 @@ class ModernChromeProfileManager:
         def update_format_desc():
             format_type = format_var.get()
             if format_type == "Standard":
-                format_desc.config(text="Standard: email|password|2fa")
+                format_desc.config(text="Standard: username|password")
             elif format_type == "TikTok Format":
                 format_desc.config(text="TikTok: username|password|email|email_password|session_token|user_id")
             else:
@@ -3356,13 +5008,14 @@ user8827533676234|Zxcv@1fzfrz|daihieptonewa29506@hotmail.com|daihiepsszui2511|M.
             return None
         
         def parse_standard_format(line):
-            """Parse standard format: email|password|2fa"""
+            """Parse standard format: username|password"""
             parts = line.split('|')
             if len(parts) >= 2:
                 return {
-                    'email': parts[0].strip(),
+                    'username': parts[0].strip(),
                     'password': parts[1].strip(),
-                    'twofa': parts[2].strip() if len(parts) > 2 else ''
+                    'email': parts[0].strip(),  # Sử dụng username làm email
+                    'twofa': ''  # Không hỗ trợ 2FA cho standard format
                 }
             return None
         
@@ -3379,9 +5032,26 @@ user8827533676234|Zxcv@1fzfrz|daihieptonewa29506@hotmail.com|daihiepsszui2511|M.
             update_format_desc()
             messagebox.showinfo("Thành công", "Đã load dữ liệu TikTok mẫu!\n\nFormat: username|password|email|email_password|session_token|user_id")
         
+        def test_standard_format():
+            """Test với dữ liệu Standard Format mẫu"""
+            sample_data = """# Ví dụ Standard Format:
+username1|password123
+username2|mypassword
+user123|secretpass
+testuser|testpass123
+
+# Format: username|password"""
+            
+            accounts_text.delete(1.0, tk.END)
+            accounts_text.insert(1.0, sample_data)
+            format_var.set("Standard")
+            update_format_desc()
+            messagebox.showinfo("Thành công", "Đã load dữ liệu Standard Format mẫu!\n\nFormat: username|password")
+        
         ttk.Button(import_frame, text="📊 Import Excel", command=import_excel).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(import_frame, text="📄 Import TXT", command=import_txt).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(import_frame, text="🎯 Test TikTok", command=test_tiktok_format).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(import_frame, text="⚡ Test Standard", command=test_standard_format).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(import_frame, text="🗑️ Clear", command=lambda: accounts_text.delete(1.0, tk.END)).pack(side=tk.LEFT)
         
         # Settings
@@ -3449,16 +5119,17 @@ user8827533676234|Zxcv@1fzfrz|daihieptonewa29506@hotmail.com|daihiepsszui2511|M.
                             'user_id': tk.get('user_id', '')
                         })
                         continue
-                # Fallback: standard formats email|password|2fa or email:password:2fa
+                # Fallback: standard formats username|password or username:password
                     if '|' in line:
                         account_data = parse_standard_format(line)
                     elif ':' in line:
                         parts = line.split(':')
                         if len(parts) >= 2:
                             account_data = {
-                                'email': parts[0].strip(),
+                                'username': parts[0].strip(),
                                 'password': parts[1].strip(),
-                                'twofa': parts[2].strip() if len(parts) > 2 else ''
+                                'email': parts[0].strip(),  # Sử dụng username làm email
+                                'twofa': ''  # Không hỗ trợ 2FA cho standard format
                             }
                     if account_data:
                         accounts.append(account_data)
@@ -3538,16 +5209,15 @@ user8827533676234|Zxcv@1fzfrz|daihieptonewa29506@hotmail.com|daihiepsszui2511|M.
                     self.root.after(0, lambda: self.status_label.config(
                         text=f"Đang chạy hàng loạt... ({current_operation}/{total_operations})"))
                     
-                    # Launch profile with login data - XÓA 2FA TỰ ĐỘNG
+                    # Launch profile with login data - CHỈ SỬ DỤNG USERNAME|PASSWORD CHO STANDARD FORMAT
                     login_data = {
-                        'email': account['email'],
+                        'username': account.get('username', account.get('email', '')),
                         'password': account['password'],
-                        'twofa': ''  # XÓA 2FA TỰ ĐỘNG
+                        'email': account.get('email', account.get('username', '')),  # Backward compatibility
+                        'twofa': ''  # Không hỗ trợ 2FA cho standard format
                     }
                     
                     # Add TikTok specific data if available
-                    if 'username' in account:
-                        login_data['username'] = account['username']
                     if 'email_password' in account:
                         login_data['email_password'] = account['email_password']
                     if 'session_token' in account:
@@ -3555,7 +5225,7 @@ user8827533676234|Zxcv@1fzfrz|daihieptonewa29506@hotmail.com|daihiepsszui2511|M.
                     if 'user_id' in account:
                         login_data['user_id'] = account['user_id']
                     
-                    print(f"🚀 [BULK-RUN] Launch {profile_name} với {account.get('email', 'N/A')} (2FA đã xóa)")
+                    print(f"🚀 [BULK-RUN] Launch {profile_name} với {login_data['username']} (format: username|password)")
                     
                     # Retry mechanism for Chrome crashes
                     max_retries = 3
@@ -3569,7 +5239,7 @@ user8827533676234|Zxcv@1fzfrz|daihieptonewa29506@hotmail.com|daihiepsszui2511|M.
                                 profile_name, 
                                 start_url=url,
                                 hidden=hidden, 
-                                auto_login=True, 
+                                auto_login=bool(login_data), 
                                 login_data=login_data,
                                 optimized_mode=True,  # Bật chế độ tối ưu
                                 ultra_low_memory=True  # Bật chế độ tiết kiệm RAM tối đa
@@ -3662,7 +5332,7 @@ user8827533676234|Zxcv@1fzfrz|daihieptonewa29506@hotmail.com|daihiepsszui2511|M.
         
         # Tạo dialog
         dialog = tk.Toplevel(self.root)
-        dialog.title("💾 Quản lý TikTok Sessions")
+        dialog.title("💾 Quản lý TikTok")
         dialog.geometry("900x600")
         dialog.resizable(True, True)
         dialog.transient(self.root)
@@ -3679,7 +5349,7 @@ user8827533676234|Zxcv@1fzfrz|daihieptonewa29506@hotmail.com|daihiepsszui2511|M.
         main_frame.pack(fill=tk.BOTH, expand=True)
         
         # Title
-        title_label = ttk.Label(main_frame, text="💾 Quản lý TikTok Sessions", 
+        title_label = ttk.Label(main_frame, text="💾 Quản lý TikTok", 
                                font=("Segoe UI", 14, "bold"))
         title_label.pack(pady=(0, 15))
         
@@ -3800,9 +5470,237 @@ user8827533676234|Zxcv@1fzfrz|daihieptonewa29506@hotmail.com|daihiepsszui2511|M.
                 else:
                     messagebox.showinfo("Thông báo", "Không có sessions nào để xóa")
         
+        def change_password():
+            """Đổi mật khẩu TikTok"""
+            selection = sessions_tree.selection()
+            if not selection:
+                messagebox.showwarning("Cảnh báo", "Vui lòng chọn một session!")
+                return
+            
+            item = sessions_tree.item(selection[0])
+            profile_name = item['values'][0]
+            
+            # Tạo dialog đổi mật khẩu
+            pwd_dialog = tk.Toplevel(dialog)
+            pwd_dialog.title("🔐 Đổi mật khẩu TikTok")
+            pwd_dialog.geometry("400x300")
+            pwd_dialog.transient(dialog)
+            pwd_dialog.grab_set()
+            
+            # Center dialog
+            pwd_dialog.update_idletasks()
+            x = (pwd_dialog.winfo_screenwidth() // 2) - (pwd_dialog.winfo_width() // 2)
+            y = (pwd_dialog.winfo_screenheight() // 2) - (pwd_dialog.winfo_height() // 2)
+            pwd_dialog.geometry(f"+{x}+{y}")
+            
+            main_frame = ttk.Frame(pwd_dialog, padding="20")
+            main_frame.pack(fill=tk.BOTH, expand=True)
+            
+            ttk.Label(main_frame, text=f"🔐 Đổi mật khẩu cho: {profile_name}", 
+                     font=("Segoe UI", 12, "bold")).pack(pady=(0, 20))
+            
+            # Mật khẩu cũ
+            ttk.Label(main_frame, text="Mật khẩu cũ:").pack(anchor=tk.W, pady=(0, 5))
+            old_pwd_entry = ttk.Entry(main_frame, width=40, show="*")
+            old_pwd_entry.pack(fill=tk.X, pady=(0, 10))
+            
+            # Mật khẩu mới
+            ttk.Label(main_frame, text="Mật khẩu mới:").pack(anchor=tk.W, pady=(0, 5))
+            new_pwd_entry = ttk.Entry(main_frame, width=40, show="*")
+            new_pwd_entry.pack(fill=tk.X, pady=(0, 10))
+            
+            # Xác nhận mật khẩu mới
+            ttk.Label(main_frame, text="Xác nhận mật khẩu mới:").pack(anchor=tk.W, pady=(0, 5))
+            confirm_pwd_entry = ttk.Entry(main_frame, width=40, show="*")
+            confirm_pwd_entry.pack(fill=tk.X, pady=(0, 20))
+            
+            def execute_password_change():
+                old_pwd = old_pwd_entry.get()
+                new_pwd = new_pwd_entry.get()
+                confirm_pwd = confirm_pwd_entry.get()
+                
+                if not all([old_pwd, new_pwd, confirm_pwd]):
+                    messagebox.showerror("Lỗi", "Vui lòng điền đầy đủ thông tin!")
+                    return
+                
+                if new_pwd != confirm_pwd:
+                    messagebox.showerror("Lỗi", "Mật khẩu mới không khớp!")
+                    return
+                
+                if len(new_pwd) < 8:
+                    messagebox.showerror("Lỗi", "Mật khẩu mới phải có ít nhất 8 ký tự!")
+                    return
+                
+                # Thực hiện đổi mật khẩu
+                success, message = self.manager.change_tiktok_password(profile_name, old_pwd, new_pwd)
+                if success:
+                    messagebox.showinfo("Thành công", message)
+                    pwd_dialog.destroy()
+                    load_sessions()
+                else:
+                    messagebox.showerror("Lỗi", message)
+            
+            # Buttons
+            btn_frame = ttk.Frame(main_frame)
+            btn_frame.pack(fill=tk.X, pady=(10, 0))
+            
+            ttk.Button(btn_frame, text="🔐 Đổi mật khẩu", command=execute_password_change).pack(side=tk.LEFT, padx=(0, 10))
+            ttk.Button(btn_frame, text="❌ Hủy", command=pwd_dialog.destroy).pack(side=tk.RIGHT)
+        
+        def get_microsoft_mx():
+            """Lấy MX từ Microsoft và lấy mail đổi password"""
+            selection = sessions_tree.selection()
+            if not selection:
+                messagebox.showwarning("Cảnh báo", "Vui lòng chọn một session!")
+                return
+            
+            item = sessions_tree.item(selection[0])
+            profile_name = item['values'][0]
+            
+            # Tạo dialog lấy MX
+            mx_dialog = tk.Toplevel(dialog)
+            mx_dialog.title("📧 Lấy MX từ Microsoft")
+            mx_dialog.geometry("500x400")
+            mx_dialog.transient(dialog)
+            mx_dialog.grab_set()
+            
+            # Center dialog
+            mx_dialog.update_idletasks()
+            x = (mx_dialog.winfo_screenwidth() // 2) - (mx_dialog.winfo_width() // 2)
+            y = (mx_dialog.winfo_screenheight() // 2) - (mx_dialog.winfo_height() // 2)
+            mx_dialog.geometry(f"+{x}+{y}")
+            
+            main_frame = ttk.Frame(mx_dialog, padding="20")
+            main_frame.pack(fill=tk.BOTH, expand=True)
+            
+            ttk.Label(main_frame, text=f"📧 Lấy MX từ Microsoft cho: {profile_name}", 
+                     font=("Segoe UI", 12, "bold")).pack(pady=(0, 20))
+            
+            # Email input
+            ttk.Label(main_frame, text="Email Microsoft:").pack(anchor=tk.W, pady=(0, 5))
+            email_entry = ttk.Entry(main_frame, width=50)
+            email_entry.pack(fill=tk.X, pady=(0, 10))
+            
+            # Password input
+            ttk.Label(main_frame, text="Mật khẩu Microsoft:").pack(anchor=tk.W, pady=(0, 5))
+            pwd_entry = ttk.Entry(main_frame, width=50, show="*")
+            pwd_entry.pack(fill=tk.X, pady=(0, 20))
+            
+            # Progress bar
+            progress = ttk.Progressbar(main_frame, mode='indeterminate')
+            progress.pack(fill=tk.X, pady=(0, 10))
+            
+            # Status label
+            status_label = ttk.Label(main_frame, text="Sẵn sàng...")
+            status_label.pack(pady=(0, 10))
+            
+            def execute_mx_fetch():
+                email = email_entry.get()
+                password = pwd_entry.get()
+                
+                if not email or not password:
+                    messagebox.showerror("Lỗi", "Vui lòng điền đầy đủ email và mật khẩu!")
+                    return
+                
+                status_label.config(text="Đang kết nối Microsoft...")
+                progress.start()
+                
+                # Thực hiện lấy MX
+                success, message = self.manager.get_microsoft_mx_and_emails(profile_name, email, password)
+                
+                progress.stop()
+                
+                if success:
+                    status_label.config(text="Thành công!")
+                    messagebox.showinfo("Thành công", message)
+                    mx_dialog.destroy()
+                else:
+                    status_label.config(text="Lỗi!")
+                    messagebox.showerror("Lỗi", message)
+            
+            # Buttons
+            btn_frame = ttk.Frame(main_frame)
+            btn_frame.pack(fill=tk.X, pady=(10, 0))
+            
+            ttk.Button(btn_frame, text="📧 Lấy MX", command=execute_mx_fetch).pack(side=tk.LEFT, padx=(0, 10))
+            ttk.Button(btn_frame, text="❌ Hủy", command=mx_dialog.destroy).pack(side=tk.RIGHT)
+        
+        def export_data():
+            """Xuất dữ liệu TikTok"""
+            from tkinter import filedialog
+            import json
+            import csv
+            from datetime import datetime
+            
+            # Chọn file để xuất
+            file_path = filedialog.asksaveasfilename(
+                title="Xuất dữ liệu TikTok",
+                defaultextension=".json",
+                filetypes=[
+                    ("JSON files", "*.json"),
+                    ("CSV files", "*.csv"),
+                    ("TXT files", "*.txt"),
+                    ("All files", "*.*")
+                ]
+            )
+            
+            if not file_path:
+                return
+            
+            success, sessions = self.manager.get_all_tiktok_sessions()
+            if not success:
+                messagebox.showerror("Lỗi", "Không thể lấy dữ liệu sessions!")
+                return
+            
+            try:
+                if file_path.endswith('.json'):
+                    # Xuất JSON
+                    export_data = {
+                        'exported_at': datetime.now().isoformat(),
+                        'total_sessions': len(sessions),
+                        'sessions': sessions
+                    }
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        json.dump(export_data, f, ensure_ascii=False, indent=2)
+                
+                elif file_path.endswith('.csv'):
+                    # Xuất CSV
+                    with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                        writer = csv.writer(f)
+                        writer.writerow(['Profile', 'Email', 'Username', 'User ID', 'Saved At'])
+                        for profile_name, session_data in sessions.items():
+                            writer.writerow([
+                                profile_name,
+                                session_data.get('email', 'N/A'),
+                                session_data.get('username', 'N/A'),
+                                session_data.get('user_id', 'N/A'),
+                                session_data.get('saved_at', 'N/A')
+                            ])
+                
+                else:
+                    # Xuất TXT
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write(f"TikTok Sessions Export - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                        f.write("=" * 50 + "\n\n")
+                        for profile_name, session_data in sessions.items():
+                            f.write(f"Profile: {profile_name}\n")
+                            f.write(f"Email: {session_data.get('email', 'N/A')}\n")
+                            f.write(f"Username: {session_data.get('username', 'N/A')}\n")
+                            f.write(f"User ID: {session_data.get('user_id', 'N/A')}\n")
+                            f.write(f"Saved At: {session_data.get('saved_at', 'N/A')}\n")
+                            f.write("-" * 30 + "\n")
+                
+                messagebox.showinfo("Thành công", f"Đã xuất dữ liệu thành công!\nFile: {file_path}")
+                
+            except Exception as e:
+                messagebox.showerror("Lỗi", f"Không thể xuất dữ liệu: {str(e)}")
+        
         # Buttons
         ttk.Button(buttons_frame, text="🔄 Làm mới", command=refresh_sessions).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(buttons_frame, text="👁️ Xem chi tiết", command=view_session_details).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(buttons_frame, text="🔐 Đổi mật khẩu", command=change_password).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(buttons_frame, text="📧 Lấy MX", command=get_microsoft_mx).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(buttons_frame, text="📤 Xuất dữ liệu", command=export_data).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(buttons_frame, text="🗑️ Xóa session", command=delete_session).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(buttons_frame, text="🗑️ Xóa tất cả", command=clear_all_sessions).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(buttons_frame, text="❌ Đóng", command=dialog.destroy).pack(side=tk.RIGHT)
@@ -4572,16 +6470,22 @@ Bạn có muốn bắt đầu treo livestream?"""
             
             cleanup()
             
-            # Start livestream with advanced settings
-            self._execute_livestream_profiles(selected_profiles_for_livestream, url, 
+            # Start livestream with basic settings first
+            # Create dummy accounts for testing
+            dummy_accounts = []
+            for i, profile_name in enumerate(selected_profiles_for_livestream):
+                dummy_accounts.append({
+                    'email': f'test{i}@example.com',
+                    'password': 'testpass',
+                    'username': f'testuser{i}',
+                    'email_password': '',
+                    'session_token': '',
+                    'user_id': f'user{i}'
+                })
+            
+            self._execute_livestream(selected_profiles_for_livestream, url, dummy_accounts,
                                             auto_out_minutes, replace_delay_seconds, 
-                                            max_viewers, hidden_var.get(),
-                                            launch_delay, check_interval, max_retries,
-                                            memory_var.get(), cleanup_var.get(), stats_var.get(),
-                                            browser_opt_var.get(), memory_cleanup_var.get(),
-                                            cpu_opt_var.get(), disk_opt_var.get(),
-                                            error_handling_var.get(), stability_var.get(),
-                                            monitoring_var.get())
+                                   max_viewers, hidden_var.get())
         
         # Start button với styling đẹp
         start_btn = tk.Button(buttons_frame, text="🚀 Bắt đầu treo livestream", 
@@ -4606,75 +6510,85 @@ Bạn có muốn bắt đầu treo livestream?"""
     def _execute_livestream(self, profiles, url, accounts, auto_out_minutes, replace_delay_seconds, max_viewers, hidden):
         """Thực thi treo livestream với auto-replace accounts"""
         def livestream_thread():
-            self.status_label.config(text="Đang treo livestream...")
-            
-            # Tạo pool accounts để thay thế
-            account_pool = accounts.copy()
-            active_viewers = {}  # {profile_name: {'driver': driver, 'account': account, 'start_time': time}}
-            backup_accounts = []  # Accounts dự phòng
-            
-            print(f"DEBUG: Bắt đầu treo livestream với {len(accounts)} accounts cho {len(profiles)} profiles")
-            print(f"DEBUG: URL: {url}")
-            print(f"DEBUG: Auto-out: {auto_out_minutes} phút, Replace delay: {replace_delay_seconds} giây")
-            print(f"DEBUG: Max viewers: {max_viewers}, Hidden: {hidden}")
-            
-            import time
-            import random
-            
-            def launch_viewer(profile_name, account):
-                """Launch một viewer cho livestream"""
-                try:
-                    print(f"📺 [LIVESTREAM] Launching viewer cho {profile_name} với account {account.get('email', 'N/A')}")
-                    
-                    # Stop existing driver if running
-                    if profile_name in self.drivers:
-                        try:
-                            self.drivers[profile_name].quit()
-                            del self.drivers[profile_name]
-                            print(f"📺 [LIVESTREAM] Đã dừng driver cũ cho {profile_name}")
-                        except Exception as e:
-                            print(f"📺 [LIVESTREAM] Lỗi khi dừng driver cũ: {str(e)}")
-                    
-                    # Prepare login data
-                    login_data = {
-                        'email': account['email'],
-                        'password': account['password'],
-                        'username': account.get('username', ''),
-                        'email_password': account.get('email_password', ''),
-                        'session_token': account.get('session_token', ''),
-                        'user_id': account.get('user_id', '')
-                    }
-                    
-                    # Launch profile with login
-                    success, result = self.manager.launch_chrome_profile(
-                        profile_name,
-                        start_url=url,
-                        hidden=hidden,
-                        auto_login=True,
-                        login_data=login_data
-                    )
-                    
-                    if success:
-                        print(f"✅ [LIVESTREAM] Viewer {profile_name} đã join livestream thành công")
-                        active_viewers[profile_name] = {
-                            'driver': result,
-                            'account': account,
-                            'start_time': time.time()
+            try:
+                # Initialize status if not exists
+                if hasattr(self, 'status_label'):
+                    self.status_label.config(text="Đang treo livestream...")
+                
+                # Tạo pool accounts để thay thế
+                account_pool = accounts.copy()
+                active_viewers = {}  # {profile_name: {'driver': driver, 'account': account, 'start_time': time}}
+                backup_accounts = []  # Accounts dự phòng
+                
+                print(f"📺 [LIVESTREAM] Bắt đầu treo livestream với {len(accounts)} accounts cho {len(profiles)} profiles")
+                print(f"📺 [LIVESTREAM] URL: {url}")
+                print(f"📺 [LIVESTREAM] Auto-out: {auto_out_minutes} phút, Replace delay: {replace_delay_seconds} giây")
+                print(f"📺 [LIVESTREAM] Max viewers: {max_viewers}, Hidden: {hidden}")
+                
+                import time
+                import random
+                
+                def launch_viewer(profile_name, account):
+                    """Launch một viewer cho livestream"""
+                    try:
+                        print(f"📺 [LIVESTREAM] Launching viewer cho {profile_name} với account {account.get('email', 'N/A')}")
+
+                        # Initialize drivers dict if not exists
+                        if not hasattr(self, 'drivers'):
+                            self.drivers = {}
+
+                        # Stop existing driver if running
+                        if profile_name in self.drivers:
+                            try:
+                                self.drivers[profile_name].quit()
+                                del self.drivers[profile_name]
+                                print(f"📺 [LIVESTREAM] Đã dừng driver cũ cho {profile_name}")
+                            except Exception as e:
+                                print(f"📺 [LIVESTREAM] Lỗi khi dừng driver cũ: {str(e)}")
+
+                        # Prepare login data
+                        login_data = {
+                            'email': account['email'],
+                            'password': account['password'],
+                            'username': account.get('username', ''),
+                            'email_password': account.get('email_password', ''),
+                            'session_token': account.get('session_token', ''),
+                            'user_id': account.get('user_id', '')
                         }
-                        self.drivers[profile_name] = result
-                        return True
-                    else:
-                        print(f"❌ [LIVESTREAM] Không thể launch viewer {profile_name}: {result}")
+
+                        # Launch profile with login
+                        success, result = self.manager.launch_chrome_profile(
+                            profile_name,
+                            start_url=url,
+                            hidden=hidden,
+                            auto_login=True,
+                            login_data=login_data
+                        )
+
+                        if success:
+                            print(f"✅ [LIVESTREAM] Viewer {profile_name} đã join livestream thành công")
+                            active_viewers[profile_name] = {
+                                'driver': result,
+                                'account': account,
+                                'start_time': time.time()
+                            }
+                            self.drivers[profile_name] = result
+                            return True
+                        else:
+                            print(f"❌ [LIVESTREAM] Không thể launch viewer {profile_name}: {result}")
+                            return False
+                    except Exception as e:
+                        print(f"❌ [LIVESTREAM] Lỗi khi launch viewer {profile_name}: {str(e)}")
                         return False
-                        
-                except Exception as e:
-                    print(f"❌ [LIVESTREAM] Lỗi khi launch viewer {profile_name}: {str(e)}")
-                    return False
             
-            def replace_viewer(profile_name):
-                """Thay thế một viewer"""
+                def replace_viewer(profile_name):
+                    """Thay thế một viewer"""
                 try:
                     print(f"🔄 [LIVESTREAM] Thay thế viewer {profile_name}")
+                    
+                    # Initialize drivers dict if not exists
+                    if not hasattr(self, 'drivers'):
+                        self.drivers = {}
                     
                     # Stop current viewer
                     if profile_name in active_viewers:
@@ -4712,65 +6626,73 @@ Bạn có muốn bắt đầu treo livestream?"""
                 except Exception as e:
                     print(f"❌ [LIVESTREAM] Lỗi khi thay thế viewer {profile_name}: {str(e)}")
             
-            # Initial launch - launch viewers up to max_viewers
-            initial_profiles = profiles[:max_viewers]
-            for profile_name in initial_profiles:
-                if account_pool:
-                    account = account_pool.pop(0)
-                    success = launch_viewer(profile_name, account)
-                    if not success:
-                        # Put account back if failed
-                        account_pool.insert(0, account)
-                    time.sleep(2)  # Small delay between launches
+                # Initial launch - launch viewers up to max_viewers
+                initial_profiles = profiles[:max_viewers]
+                for profile_name in initial_profiles:
+                    if account_pool:
+                        account = account_pool.pop(0)
+                        success = launch_viewer(profile_name, account)
+                        if not success:
+                            # Put account back if failed
+                            account_pool.insert(0, account)
+                        time.sleep(2)  # Small delay between launches
             
-            # Main loop - monitor and replace viewers
-            while True:
-                try:
-                    current_time = time.time()
-                    viewers_to_replace = []
+                # Main loop - monitor and replace viewers
+                while True:
+                    try:
+                        current_time = time.time()
+                        viewers_to_replace = []
                     
-                    # Check for viewers that need to be replaced
-                    for profile_name, viewer_info in active_viewers.items():
-                        elapsed_time = current_time - viewer_info['start_time']
-                        if elapsed_time >= (auto_out_minutes * 60):  # Convert to seconds
-                            viewers_to_replace.append(profile_name)
+                        # Check for viewers that need to be replaced
+                        for profile_name, viewer_info in active_viewers.items():
+                            elapsed_time = current_time - viewer_info['start_time']
+                            if elapsed_time >= (auto_out_minutes * 60):  # Convert to seconds
+                                viewers_to_replace.append(profile_name)
                     
-                    # Replace viewers that need replacement
-                    for profile_name in viewers_to_replace:
-                        replace_viewer(profile_name)
+                        # Replace viewers that need replacement
+                        for profile_name in viewers_to_replace:
+                            replace_viewer(profile_name)
                     
-                    # Update status
-                    active_count = len(active_viewers)
-                    pool_count = len(account_pool)
-                    backup_count = len(backup_accounts)
+                        # Update status
+                        active_count = len(active_viewers)
+                        pool_count = len(account_pool)
+                        backup_count = len(backup_accounts)
                     
-                    status_text = f"📺 Livestream: {active_count} viewers active, {pool_count} accounts in pool, {backup_count} backup"
-                    self.root.after(0, lambda: self.status_label.config(text=status_text))
+                        status_text = f"📺 Livestream: {active_count} viewers active, {pool_count} accounts in pool, {backup_count} backup"
+                        if hasattr(self, 'status_label'):
+                            self.root.after(0, lambda: self.status_label.config(text=status_text))
+                        print(f"📊 [LIVESTREAM] Status: {status_text}")
                     
-                    # Check if we should stop (no more accounts and no active viewers)
-                    if not account_pool and not active_viewers:
-                        print("📺 [LIVESTREAM] Tất cả accounts đã hết, dừng livestream")
-                        break
+                        # Check if we should stop (no more accounts and no active viewers)
+                        if not account_pool and not active_viewers:
+                            print("📺 [LIVESTREAM] Tất cả accounts đã hết, dừng livestream")
+                            break
+                        
+                        # Sleep before next check
+                        time.sleep(30)  # Check every 30 seconds
                     
-                    # Sleep before next check
-                    time.sleep(30)  # Check every 30 seconds
-                    
-                except Exception as e:
-                    print(f"❌ [LIVESTREAM] Lỗi trong main loop: {str(e)}")
-                    time.sleep(10)
+                    except Exception as e:
+                        print(f"❌ [LIVESTREAM] Lỗi trong main loop: {str(e)}")
+                        time.sleep(10)
             
-            # Cleanup
-            print("📺 [LIVESTREAM] Dọn dẹp và dừng tất cả viewers")
-            for profile_name, viewer_info in active_viewers.items():
-                try:
-                    viewer_info['driver'].quit()
-                    if profile_name in self.drivers:
-                        del self.drivers[profile_name]
-                except Exception as e:
-                    print(f"❌ [LIVESTREAM] Lỗi khi dọn dẹp {profile_name}: {str(e)}")
-            
-            self.root.after(0, lambda: self.status_label.config(text="📺 Livestream đã dừng"))
-            self.root.after(0, self.refresh_profiles)
+                # Cleanup
+                print("📺 [LIVESTREAM] Dọn dẹp và dừng tất cả viewers")
+                for profile_name, viewer_info in active_viewers.items():
+                    try:
+                        viewer_info['driver'].quit()
+                        if hasattr(self, 'drivers') and profile_name in self.drivers:
+                            del self.drivers[profile_name]
+                    except Exception as e:
+                        print(f"❌ [LIVESTREAM] Lỗi khi dọn dẹp {profile_name}: {str(e)}")
+                
+                if hasattr(self, 'status_label'):
+                    self.root.after(0, lambda: self.status_label.config(text="📺 Livestream đã dừng"))
+                self.root.after(0, self.refresh_profiles)
+                
+            except Exception as e:
+                print(f"❌ [LIVESTREAM] Lỗi tổng thể trong livestream thread: {str(e)}")
+                if hasattr(self, 'status_label'):
+                    self.root.after(0, lambda: self.status_label.config(text="❌ Livestream lỗi"))
         
         threading.Thread(target=livestream_thread, daemon=True).start()
     
@@ -9028,6 +10950,7 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
                 if not available:
                     self.log_proxy_status("❌ No available profiles to map proxies to.")
                     return
+                
                 count = min(len(available), len(proxy_rows_without_profile))
                 for i in range(count):
                     mapping[available[i]] = proxy_rows_without_profile[i]
@@ -9328,7 +11251,6 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
                             self.log_auto_2fa("⚠️ No refresh token received - token will expire in 1 hour")
                     
                     self.root.after(0, update_ui)
-                    
                 except Exception as e:
                     def update_ui():
                         self.log_auto_2fa(f"❌ Device login error: {e}")
@@ -9359,10 +11281,13 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
             
             def test_thread():
                 try:
-                    # Create account line for testing
-                    account_line = f"test|test|{email}|{email_password}|{refresh_token}|{client_id}"
-                    
-                    success, result = self.manager.test_graph_mail_fetch(account_line)
+                    # Sử dụng ultimate handler trực tiếp
+                    success, result = self.manager.ultimate_auto_2fa_handler(
+                        email=email,
+                        password=email_password,
+                        refresh_token=refresh_token,
+                        client_id=client_id
+                    )
                     
                     def update_ui():
                         if success:
@@ -9478,6 +11403,54 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
             
         except Exception as e:
             self.log_auto_2fa(f"❌ Clear error: {e}")
+    
+    def start_continuous_monitor(self):
+        """Start continuous monitor"""
+        try:
+            email = self.auto_2fa_email.get()
+            refresh_token = self.auto_2fa_refresh_token.get()
+            client_id = self.auto_2fa_client_id.get()
+            email_password = self.auto_2fa_email_password.get()
+            
+            if not email:
+                messagebox.showerror("Error", "Please enter email address")
+                return
+            
+            self.log_auto_2fa(f"🔍 Starting continuous monitor for: {email}")
+            
+            def monitor_thread():
+                try:
+                    # Sử dụng continuous monitor từ chrome_manager
+                    success, result = self.manager.continuous_monitor_2fa(
+                        email=email,
+                        password=email_password,
+                        refresh_token=refresh_token,
+                        client_id=client_id,
+                        duration=300,  # 5 phút
+                        interval=30   # 30 giây
+                    )
+                    
+                    def update_ui():
+                        if success:
+                            self.log_auto_2fa(f"🎉 Monitor found code: {result}")
+                        else:
+                            self.log_auto_2fa(f"⏰ Monitor timeout: {result}")
+                    
+                    self.root.after(0, update_ui)
+                    
+                except Exception as e:
+                    def update_ui():
+                        self.log_auto_2fa(f"❌ Monitor error: {e}")
+                    self.root.after(0, update_ui)
+            
+            # Run in background thread
+            import threading
+            thread = threading.Thread(target=monitor_thread)
+            thread.daemon = True
+            thread.start()
+            
+        except Exception as e:
+            self.log_auto_2fa(f"❌ Monitor start error: {e}")
     
     def log_auto_2fa(self, message):
         """Log message to auto 2FA status area"""

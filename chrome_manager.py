@@ -5,6 +5,7 @@ import subprocess
 import time
 import threading
 import requests
+import random
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -21,6 +22,25 @@ class ChromeProfileManager:
         self.chrome_data_dir = self._get_chrome_data_dir()
         # Email manager removed
         self.load_config()
+        # Nạp tuỳ chọn mặc định từ GPM setting.dat (nếu có)
+        self.gpm_defaults = self._load_gpm_setting()
+        # Đảm bảo thư mục logs gốc
+        try:
+            os.makedirs(os.path.join(os.getcwd(), "logs"), exist_ok=True)
+        except Exception:
+            pass
+
+    def _append_app_log(self, profile_path: str, message: str) -> None:
+        """Ghi nhanh log của ứng dụng vào file trong profile để tiện đọc lại."""
+        try:
+            logs_dir = os.path.join(profile_path, 'logs')
+            os.makedirs(logs_dir, exist_ok=True)
+            log_file = os.path.join(logs_dir, 'app_launch.log')
+            ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            with open(log_file, 'a', encoding='utf-8') as f:
+                f.write(f"[{ts}] {message}\n")
+        except Exception:
+            pass
         
     # === Stealth feature stubs (disabled) ===
     # Some UI screens reference stealth config helpers. To avoid runtime errors
@@ -127,6 +147,46 @@ class ChromeProfileManager:
                     self.config.write(f)
         except Exception as e:
             print(f"Error saving config: {str(e)}")
+
+    def _load_gpm_setting(self):
+        """Nạp setting.dat của GPM nếu tồn tại, trả về dict rỗng nếu không có.
+        Ưu tiên các trường: DefaultProfileSetting.user_agent, auto_language, webrtc_mode, raw_proxy
+        """
+        try:
+            # Các vị trí khả dĩ của setting.dat
+            candidates = [
+                os.path.join(os.getcwd(), "setting.dat"),
+                os.path.join(os.getcwd(), "gpm_setting.dat"),
+                os.path.join("C:\\GPM-profile", "setting.dat"),
+            ]
+            for p in candidates:
+                if os.path.exists(p):
+                    with open(p, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    dps = data.get("DefaultProfileSetting", {}) if isinstance(data, dict) else {}
+                    # Chuẩn hoá webrtc_mode → policy
+                    mode = dps.get("webrtc_mode")
+                    policy = None
+                    if mode == 2:
+                        policy = 'disable_non_proxied_udp'
+                    elif mode == 1:
+                        policy = 'default_public_interface_only'
+                    elif mode == 0:
+                        policy = 'default'
+                    # auto_language → ngôn ngữ
+                    lang = None
+                    if dps.get("auto_language") is True:
+                        lang = 'en-US'
+                    # Kết quả
+                    return {
+                        'user_agent': (dps.get('user_agent') or '').strip() or None,
+                        'language': lang,
+                        'webrtc_policy': policy,
+                        'raw_proxy': (dps.get('raw_proxy') or '').strip() or None,
+                    }
+        except Exception as _e:
+            print(f"⚠️ [GPM-SETTING] Không thể nạp setting.dat: {_e}")
+        return {}
     
     def create_profile_directory(self):
         """Tạo thư mục profiles nếu chưa tồn tại"""
@@ -169,10 +229,28 @@ class ChromeProfileManager:
             print(f"❌ [PROFILE-EXT] Error creating profile with extension: {str(e)}")
             return False, f"Error creating profile with extension: {str(e)}"
     
-    def clone_chrome_profile(self, profile_name, source_profile="Default"):
-        """Nhân bản profile Chrome - Tối ưu hóa để giảm dữ liệu"""
+    def _dedupe_nested_profile_dir(self, profile_path: str) -> None:
+        """Xóa thư mục profile lồng nhau có cùng tên (trùng) nếu có.
+
+        Ví dụ: C:\profiles\P-457...\P-457... → xóa thư mục bên trong.
+        """
+        try:
+            base = os.path.basename(profile_path.rstrip(os.sep))
+            nested = os.path.join(profile_path, base)
+            if os.path.isdir(nested):
+                import shutil as _shutil
+                _shutil.rmtree(nested, ignore_errors=True)
+                print(f"🧹 [DEDUP] Đã xóa thư mục lồng nhau: {nested}")
+        except Exception as _e:
+            print(f"⚠️ [DEDUP] Không thể dọn nested dir: {_e}")
+
+    def clone_chrome_profile(self, profile_name, source_profile="Default", profile_type="work"):
+        """Nhân bản profile Chrome - Tối ưu hóa để giảm dữ liệu với antidetect"""
         try:
             self.create_profile_directory()
+            
+            # Sử dụng profile_name được truyền vào làm display_name
+            display_name = profile_name
             
             # Đường dẫn profile gốc và đích
             source_path = os.path.join(self.chrome_data_dir, source_profile)
@@ -204,16 +282,31 @@ class ChromeProfileManager:
                     print(f"⚠️ [CLONE] Lỗi khi xóa profile cũ: {e}")
                     raise Exception(f"Không thể xóa profile cũ: {e}")
             
-            # Sao chép profile
-            print(f"📋 [CLONE] Sao chép từ {source_path} đến {target_path}")
-            shutil.copytree(source_path, target_path)
+            # KHÔNG sao chép dữ liệu Chrome gốc. Chỉ tạo thư mục Default/ rỗng như GPM
+            print(f"📋 [CLONE] Tạo thư mục rỗng: {os.path.join(target_path, 'Default')}")
+            os.makedirs(os.path.join(target_path, 'Default'), exist_ok=True)
+            # Dọn mọi thư mục lồng nhau trùng tên nếu có
+            self._dedupe_nested_profile_dir(target_path)
             
             # Đợi để đảm bảo copy hoàn tất
             import time
             time.sleep(0.1)
             
-            # Tối ưu hóa profile để giảm dữ liệu
+            # Tối ưu hóa profile để giảm dữ liệu (không thêm thư mục phụ ngoài Default)
             self._optimize_profile_for_low_data(target_path)
+            # Bỏ random hóa tại bước tạo để không ghi file vào Default/ trước khi khởi động
+
+            # Gán một MAC address ảo, duy nhất cho profile (lưu vào profile_settings.json)
+            try:
+                self._ensure_virtual_mac_for_profile(target_path)
+            except Exception as _mac_err:
+                print(f"⚠️ [CLONE] Không thể gán MAC ảo cho {profile_name}: {_mac_err}")
+            
+            # Tạo profile settings với antidetect và profile type
+            try:
+                self._create_profile_settings(target_path, profile_name, profile_type, display_name)
+            except Exception as _settings_err:
+                print(f"⚠️ [CLONE] Không thể tạo settings cho {profile_name}: {_settings_err}")
             
             # Cập nhật cấu hình
             if not self.config.has_section('PROFILES'):
@@ -226,6 +319,1111 @@ class ChromeProfileManager:
             
         except Exception as e:
             return False, f"Lỗi khi tạo profile: {str(e)}"
+
+    def _generate_random_mac(self) -> str:
+        """Tạo MAC ảo ngẫu nhiên theo chuẩn (locally administered, unicast).
+
+        Bit thấp thứ 2 của octet đầu = 1 (locally administered), bit thấp nhất = 0 (unicast).
+        """
+        import os
+        b = bytearray(os.urandom(6))
+        b[0] = (b[0] | 0x02) & 0xFE
+        return ":".join(f"{x:02X}" for x in b)
+
+    def _ensure_virtual_mac_for_profile(self, profile_path: str) -> None:
+        """Đảm bảo mỗi profile có một MAC ảo riêng được lưu trong profile_settings.json.
+
+        Không thay đổi MAC thật của hệ thống; chỉ lưu để dùng cho hiển thị và các cơ chế giả lập.
+        """
+        import json, os
+        settings_path = os.path.join(profile_path, 'profile_settings.json')
+        data = {}
+        if os.path.exists(settings_path):
+            try:
+                with open(settings_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+        hw = data.get('hardware', {})
+        mac = hw.get('mac_address', '')
+        if not mac:
+            hw['mac_address'] = self._generate_random_mac()
+            data['hardware'] = hw
+            # đảm bảo có vùng software để nhất quán cấu trúc
+            data.setdefault('software', {})
+            os.makedirs(profile_path, exist_ok=True)
+            with open(settings_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def _create_profile_settings(self, profile_path, profile_name, profile_type, display_name):
+        """Tạo profile settings với antidetect và cấu hình theo loại profile"""
+        import json, os, random, time
+        
+        # Cấu hình ngôn ngữ theo profile type
+        if profile_type == "work":
+            # Work profile: US/UK
+            languages = ["en-US", "en-GB"]
+            locales = ["en_US", "en_GB"]
+            timezones = ["America/New_York", "Europe/London"]
+            countries = ["US", "GB"]
+        elif profile_type == "cong_viec":
+            # Công việc profile: Việt Nam
+            languages = ["vi-VN", "vi"]
+            locales = ["vi_VN"]
+            timezones = ["Asia/Ho_Chi_Minh"]
+            countries = ["VN"]
+        else:
+            # Default: US
+            languages = ["en-US"]
+            locales = ["en_US"]
+            timezones = ["America/New_York"]
+            countries = ["US"]
+        
+        # Tạo settings data
+        settings_data = {
+            'profile_info': {
+                'name': profile_name,
+                'display_name': display_name,
+                'type': profile_type,
+                'created_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'mac_address': self._generate_random_mac()
+            },
+            'antidetect': {
+                'enabled': True,
+                'hide_webdriver': True,
+                'spoof_plugins': True,
+                'spoof_languages': True,
+                'spoof_chrome': True,
+                'mask_webgl': True,
+                'canvas_noise': True,
+                'webrtc_protection': True,
+                'disable_blink_features': True,
+                'disable_automation': True
+            },
+            'software': {
+                'user_agent': self._generate_user_agent(profile_type),
+                'language': random.choice(languages),
+                'locale': random.choice(locales),
+                'timezone': random.choice(timezones),
+                'country': random.choice(countries),
+                'startup_url': "",
+                'webrtc_policy': "default_public_interface_only",
+                'os_font': "Real"
+            },
+            'hardware': {
+                'screen_resolution': random.choice(["1920x1080", "1366x768", "1440x900", "2560x1440"]),
+                'canvas_noise': random.choice(["Off", "On"]),
+                'client_rect_noise': random.choice(["Off", "On"]),
+                'webgl_image_noise': random.choice(["Off", "On"]),
+                'audio_noise': random.choice(["Off", "On"]),
+                'webgl_meta_masked': True,
+                'webgl_vendor': random.choice([
+                    "Google Inc. (NVIDIA)",
+                    "Google Inc. (Intel)", 
+                    "Google Inc. (AMD)"
+                ]),
+                'webgl_renderer': random.choice([
+                    "ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)",
+                    "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+                    "ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0, D3D11)"
+                ]),
+                'media_devices_masked': True,
+                'cpu_cores': str(random.choice([2, 4, 6, 10, 12])),
+                'device_memory': str(random.choice([4, 8, 12, 24, 32])),
+                'media_audio_inputs': str(random.randint(1, 3)),
+                'media_audio_outputs': str(random.randint(0, 2)),
+                'media_video_inputs': str(random.randint(0, 2)),
+                'mac_address': self._generate_random_mac()
+            },
+            'chrome_flags': self._get_antidetect_chrome_flags(),
+            'chrome_preferences': self._get_antidetect_chrome_preferences(profile_type)
+        }
+        
+        # Lưu settings
+        settings_path = os.path.join(profile_path, 'profile_settings.json')
+        with open(settings_path, 'w', encoding='utf-8') as f:
+            json.dump(settings_data, f, ensure_ascii=False, indent=2)
+        
+        # Không chạm vào Local State/Preferences/GPM folders ở bước tạo
+        # để Chrome tự sinh khi khởi động lần đầu (giống GPM)
+        
+        print(f"✅ [PROFILE-SETTINGS] Đã tạo settings cho {profile_name} (type: {profile_type})")
+
+    def _update_profile_name_in_local_state(self, profile_path, display_name):
+        """Cập nhật tên profile trong Local State theo cấu trúc GPMLogin"""
+        import json, os, time, random, base64, uuid
+        
+        local_state_path = os.path.join(profile_path, "Local State")
+        try:
+            # Đọc Local State hiện tại
+            local_state = {}
+            if os.path.exists(local_state_path):
+                with open(local_state_path, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    if content:
+                        local_state = json.loads(content)
+            
+            # Tạo cấu trúc Local State theo GPMLogin
+            current_time = int(time.time() * 1000000)  # Microseconds
+            current_timestamp = int(time.time())
+            
+            # Cập nhật profile info theo cấu trúc GPMLogin
+            if 'profile' not in local_state:
+                local_state['profile'] = {}
+            
+            # Lấy tên profile từ đường dẫn
+            profile_name = os.path.basename(profile_path)
+            
+            # Cấu trúc profile info theo GPMLogin
+            local_state['profile']['info_cache'] = {
+                "Default": {
+                    "active_time": current_time,
+                    "avatar_icon": "chrome://theme/IDR_PROFILE_AVATAR_26",
+                    "background_apps": False,
+                    "default_avatar_fill_color": -14737376,
+                    "default_avatar_stroke_color": -3684409,
+                    "force_signin_profile_locked": False,
+                    "gaia_id": "",
+                    "is_consented_primary_account": False,
+                    "is_ephemeral": False,
+                    "is_using_default_avatar": True,
+                    "is_using_default_name": False,
+                    "managed_user_id": "",
+                    "metrics_bucket_index": 1,
+                    "name": display_name,
+                    "profile_color_seed": random.randint(-16777216, 16777215),
+                    "profile_highlight_color": -14737376,
+                    "signin.with_credential_provider": False,
+                    "user_name": ""
+                },
+                profile_name: {
+                    "active_time": current_time,
+                    "avatar_icon": "chrome://theme/IDR_PROFILE_AVATAR_26",
+                    "background_apps": False,
+                    "default_avatar_fill_color": -14737376,
+                    "default_avatar_stroke_color": -3684409,
+                    "force_signin_profile_locked": False,
+                    "gaia_id": "",
+                    "is_consented_primary_account": False,
+                    "is_ephemeral": False,
+                    "is_using_default_avatar": True,
+                    "is_using_default_name": False,
+                    "managed_user_id": "",
+                    "metrics_bucket_index": 2,
+                    "name": display_name,
+                    "profile_color_seed": random.randint(-16777216, 16777215),
+                    "profile_highlight_color": -14737376,
+                    "signin.with_credential_provider": False,
+                    "user_name": ""
+                }
+            }
+            
+            local_state['profile']['last_active_profiles'] = [profile_name, "Default"]
+            local_state['profile']['metrics'] = {"next_bucket_index": 3}
+            local_state['profile']['profile_counts_reported'] = str(current_time)
+            local_state['profile']['profiles_order'] = ["Default", profile_name]
+            
+            # Cập nhật các thông tin khác theo GPMLogin
+            local_state['browser'] = {
+                "first_run_finished": True,
+                "shortcut_migration_version": "139.0.7258.139"
+            }
+            
+            local_state['legacy'] = {
+                "profile": {
+                    "name": {
+                        "migrated": True
+                    }
+                }
+            }
+            
+            # Cập nhật user_experience_metrics với thông tin mới
+            local_state['user_experience_metrics'] = {
+                "limited_entropy_randomization_source": base64.b64encode(os.urandom(16)).decode('ascii'),
+                "low_entropy_source3": random.randint(1000, 9999),
+                "machine_id": random.randint(1000000, 9999999),
+                "pseudo_low_entropy_source": random.randint(1000, 9999),
+                "session_id": 0,
+                "stability": {
+                    "browser_last_live_timestamp": str(current_time),
+                    "exited_cleanly": True,
+                    "stats_buildtime": str(current_timestamp),
+                    "stats_version": "139.0.7258.139-64-devel",
+                    "system_crash_count": 0
+                }
+            }
+            
+            # Cập nhật variations
+            local_state['variations'] = {
+                "seed": base64.b64encode(os.urandom(16)).decode('ascii')
+            }
+            
+            # Thêm các trường khác từ GPMLogin
+            local_state['accessibility'] = {
+                "captions": {
+                    "soda_registered_language_packs": ["vi-VN"]
+                }
+            }
+            
+            local_state['autofill'] = {
+                "ablation_seed": base64.b64encode(os.urandom(8)).decode('ascii')
+            }
+            
+            local_state['breadcrumbs'] = {
+                "enabled": False,
+                "enabled_time": str(current_time)
+            }
+            
+            local_state['chrome_labs_activation_threshold'] = 19
+            local_state['chrome_labs_new_badge_dict'] = {}
+            local_state['hardware_acceleration_mode_previous'] = True
+            
+            local_state['local'] = {
+                "password_hash_data_list": []
+            }
+            
+            local_state['management'] = {
+                "platform": {
+                    "azure_active_directory": 0,
+                    "enterprise_mdm_win": 0
+                }
+            }
+            
+            local_state['network_time'] = {
+                "network_time_mapping": {
+                    "local": current_time,
+                    "network": current_time + 1000000,
+                    "ticks": random.randint(900000000000, 999999999999),
+                    "uncertainty": random.randint(10000000, 20000000)
+                }
+            }
+            
+            local_state['optimization_guide'] = {
+                "model_execution": {
+                    "last_usage_by_feature": {}
+                },
+                "model_store_metadata": {},
+                "on_device": {
+                    "last_version": "139.0.7258.139",
+                    "model_crash_count": 0
+                }
+            }
+            
+            local_state['os_crypt'] = {
+                "audit_enabled": True,
+                "encrypted_key": "RFBBUEkBAAAA0Iyd3wEV0RGMegDAT8KX6wEAAADfzDDhCG2IQpQG2ixqQwTgEAAAABwAAABHAG8AbwBnAGwAZQAgAEMAaAByAG8AbQBlAAAAEGYAAAABAAAgAAAA6xApW9GoeN30cl+TVcW0F6Jc3jiXFxdxUfqc5IdCle4AAAAADoAAAAACAAAgAAAAmo7ZwWFAv6/Mt+Cx3nZIFvm/h4se69uyFOr0gCgI69UwAAAAxKaxtfltdpQHZEpobJPuQoOiWZc7/IGbEnqSr19DmyhKar30BvHQes4nvYZvm7wUQAAAAMOQHlFki669/iNdzOlH1tYUc+yfVvzIV8arPeTxlf4B+MS4yX4m1cCtRESZMLVjT26xDKn9kLMUe3poZcSEJNw="
+            }
+            
+            local_state['performance_intervention'] = {
+                "last_daily_sample": str(current_time)
+            }
+            
+            local_state['policy'] = {
+                "last_statistics_update": str(current_time)
+            }
+            
+            local_state['privacy_budget'] = {
+                "meta_experiment_activation_salt": random.random()
+            }
+            
+            local_state['profile_network_context_service'] = {
+                "http_cache_finch_experiment_groups": "None None None None"
+            }
+            
+            local_state['session_id_generator_last_value'] = str(random.randint(1000000000, 9999999999))
+            
+            local_state['signin'] = {
+                "active_accounts_last_emitted": str(current_time)
+            }
+            
+            local_state['subresource_filter'] = {
+                "ruleset_version": {
+                    "checksum": 0,
+                    "content": "",
+                    "format": 0
+                }
+            }
+            
+            local_state['tab_stats'] = {
+                "discards_external": 0,
+                "discards_frozen": 0,
+                "discards_proactive": 0,
+                "discards_suggested": 0,
+                "discards_urgent": 0,
+                "last_daily_sample": str(current_time),
+                "max_tabs_per_window": 1,
+                "reloads_external": 0,
+                "reloads_frozen": 0,
+                "reloads_proactive": 0,
+                "reloads_suggested": 0,
+                "reloads_urgent": 0,
+                "total_tab_count_max": 1,
+                "window_count_max": 1
+            }
+            
+            local_state['ukm'] = {
+                "persisted_logs": []
+            }
+            
+            local_state['uninstall_metrics'] = {
+                "installation_date2": str(current_timestamp)
+            }
+            
+            local_state['variations_google_groups'] = {
+                "Default": [],
+                profile_name: []
+            }
+            
+            local_state['was'] = {
+                "restarted": False
+            }
+            
+            # Ghi lại Local State
+            with open(local_state_path, 'w', encoding='utf-8') as f:
+                json.dump(local_state, f, ensure_ascii=False, indent=2)
+                
+            print(f"✅ [PROFILE-NAME] Đã cập nhật Local State theo GPMLogin: {display_name}")
+            
+        except Exception as e:
+            print(f"⚠️ [PROFILE-NAME] Lỗi cập nhật Local State: {e}")
+
+    def _clear_profile_name_cache(self, profile_path):
+        """Xóa cache profile cũ để Chrome nhận diện tên mới"""
+        import os, shutil
+        
+        try:
+            # Xóa các file cache có thể chứa tên profile cũ
+            cache_files = [
+                "SingletonLock",
+                "SingletonSocket", 
+                "SingletonCookie",
+                "lockfile",
+                "chrome_debug.log"
+            ]
+            
+            for cache_file in cache_files:
+                cache_path = os.path.join(profile_path, cache_file)
+                if os.path.exists(cache_path):
+                    try:
+                        if os.path.isfile(cache_path):
+                            os.remove(cache_path)
+                        elif os.path.isdir(cache_path):
+                            shutil.rmtree(cache_path)
+                    except Exception:
+                        pass
+            
+            # Xóa thư mục cache nếu có
+            cache_dirs = ["Cache", "Code Cache", "GPUCache", "ShaderCache"]
+            for cache_dir in cache_dirs:
+                cache_path = os.path.join(profile_path, cache_dir)
+                if os.path.exists(cache_path):
+                    try:
+                        shutil.rmtree(cache_path)
+                    except Exception:
+                        pass
+                        
+            print(f"✅ [CACHE-CLEAR] Đã xóa cache profile: {os.path.basename(profile_path)}")
+            
+        except Exception as e:
+            print(f"⚠️ [CACHE-CLEAR] Lỗi xóa cache: {e}")
+
+    def _create_gpm_directory_structure(self, profile_path):
+        """Tạo cấu trúc thư mục giống GPMLogin"""
+        import os, json, time
+        
+        try:
+            # Tạo thư mục Default nếu chưa có
+            default_path = os.path.join(profile_path, "Default")
+            if not os.path.exists(default_path):
+                os.makedirs(default_path)
+            
+            # Tạo các thư mục con giống GPMLogin
+            gpm_dirs = [
+                "GPMBrowserExtenions",
+                "GPMSoft",
+                "GPMSoft/Exporter", 
+                "GPMSoft/Extensions",
+                "GPMSoft/Extensions/clipboard-ext"
+            ]
+            
+            for dir_path in gpm_dirs:
+                full_path = os.path.join(profile_path, dir_path)
+                if not os.path.exists(full_path):
+                    os.makedirs(full_path)
+            
+            # Tạo file gpm_cmd.json
+            gpm_cmd_path = os.path.join(profile_path, "GPMSoft", "Exporter", "gpm_cmd.json")
+            if not os.path.exists(gpm_cmd_path):
+                gpm_cmd_data = {
+                    "version": "1.0",
+                    "commands": [],
+                    "created_at": int(time.time())
+                }
+                with open(gpm_cmd_path, 'w', encoding='utf-8') as f:
+                    json.dump(gpm_cmd_data, f, ensure_ascii=False, indent=2)
+            
+            # Tạo file ExportCookies.json
+            cookies_path = os.path.join(profile_path, "GPMSoft", "Exporter", "ExportCookies.json")
+            if not os.path.exists(cookies_path):
+                cookies_data = {
+                    "cookies": [],
+                    "exported_at": int(time.time())
+                }
+                with open(cookies_path, 'w', encoding='utf-8') as f:
+                    json.dump(cookies_data, f, ensure_ascii=False, indent=2)
+            
+            # Tạo file gpm_fg.dat và gpm_pi.dat
+            gpm_fg_path = os.path.join(profile_path, "GPMSoft", "gpm_fg.dat")
+            if not os.path.exists(gpm_fg_path):
+                with open(gpm_fg_path, 'w') as f:
+                    f.write("GPM_FG_DATA")
+            
+            gpm_pi_path = os.path.join(profile_path, "GPMSoft", "gpm_pi.dat")
+            if not os.path.exists(gpm_pi_path):
+                with open(gpm_pi_path, 'w') as f:
+                    f.write("GPM_PI_DATA")
+            
+            # Tạo manifest.json cho clipboard extension
+            manifest_path = os.path.join(profile_path, "GPMSoft", "Extensions", "clipboard-ext", "manifest.json")
+            if not os.path.exists(manifest_path):
+                manifest_data = {
+                    "manifest_version": 3,
+                    "name": "GPM Clipboard Extension",
+                    "version": "1.0",
+                    "description": "Clipboard extension for GPM profiles",
+                    "permissions": ["clipboardRead", "clipboardWrite"],
+                    "action": {
+                        "default_popup": "popup.html"
+                    },
+                    "background": {
+                        "service_worker": "background.js"
+                    }
+                }
+                with open(manifest_path, 'w', encoding='utf-8') as f:
+                    json.dump(manifest_data, f, ensure_ascii=False, indent=2)
+            
+            print(f"✅ [GPM-STRUCTURE] Đã tạo cấu trúc thư mục GPMLogin cho {os.path.basename(profile_path)}")
+            
+        except Exception as e:
+            print(f"⚠️ [GPM-STRUCTURE] Lỗi tạo cấu trúc thư mục: {e}")
+
+    def _create_gpm_preferences(self, profile_path, display_name, profile_type):
+        """Tạo Preferences file giống GPMLogin"""
+        import json, os, time, random, uuid, base64
+        
+        try:
+            # Tạo thư mục Default nếu chưa có
+            default_path = os.path.join(profile_path, "Default")
+            if not os.path.exists(default_path):
+                os.makedirs(default_path)
+            
+            preferences_path = os.path.join(default_path, "Preferences")
+            current_time = int(time.time() * 1000000)
+            current_timestamp = int(time.time())
+            
+            # Tạo Preferences theo cấu trúc GPMLogin
+            preferences = {
+                "NewTabPage": {"PrevNavigationTime": str(current_time)},
+                "accessibility": {
+                    "captions": {
+                        "headless_caption_enabled": False,
+                        "live_caption_language": "vi-VN" if profile_type == "cong_viec" else "en-US"
+                    }
+                },
+                "account_tracker_service_last_update": str(current_time),
+                "alternate_error_pages": {"backup": True},
+                "announcement_notification_service_first_run_time": str(current_time),
+                "apps": {"shortcuts_arch": "", "shortcuts_version": 1},
+                "autocomplete": {"retention_policy_last_version": 139},
+                "autofill": {"last_version_deduped": 139},
+                "bookmark": {"storage_computation_last_update": str(current_time)},
+                "browser": {
+                    "window_placement": {
+                        "bottom": 807, "left": 9, "maximized": False,
+                        "right": 1060, "top": 9,
+                        "work_area_bottom": 816, "work_area_left": 0,
+                        "work_area_right": 1536, "work_area_top": 0
+                    }
+                },
+                "commerce_daily_metrics_last_update_time": str(current_time),
+                "countryid_at_install": 22094,
+                "default_apps_install_state": 3,
+                "default_search_provider": {"guid": ""},
+                "domain_diversity": {"last_reporting_timestamp": str(current_time)},
+                "enterprise_profile_guid": str(uuid.uuid4()),
+                "extensions": {
+                    "alerts": {"initialized": True},
+                    "chrome_url_overrides": {},
+                    "commands": {
+                        "windows:Ctrl+Shift+V": {
+                            "command_name": "command_gpm_paste",
+                            "extension": "cggkholhedneciencfpgjdgkccpffghi",
+                            "global": False
+                        }
+                    },
+                    "last_chrome_version": "139.0.7258.139",
+                    "settings": {}
+                },
+                "gaia_cookie": {
+                    "changed_time": current_timestamp + 0.697049,
+                    "hash": "2jmj7l5rSw0yVb/vlWAYkK/YBwk=",
+                    "last_list_accounts_binary_data": "",
+                    "periodic_report_time_2": str(current_time)
+                },
+                "gcm": {"product_category_for_subtypes": "com.chrome.windows"},
+                "google": {
+                    "services": {
+                        "signin_scoped_device_id": str(uuid.uuid4())
+                    }
+                },
+                "in_product_help": {
+                    "new_badge": {
+                        "Compose": {"feature_enabled_time": str(current_time), "show_count": 0, "used_count": 0},
+                        "ComposeNudge": {"feature_enabled_time": str(current_time), "show_count": 0, "used_count": 0},
+                        "ComposeProactiveNudge": {"feature_enabled_time": str(current_time), "show_count": 0, "used_count": 0},
+                        "LensOverlay": {"feature_enabled_time": str(current_time), "show_count": 0, "used_count": 0},
+                        "PasswordManualFallbackAvailable": {"feature_enabled_time": str(current_time), "show_count": 0, "used_count": 0}
+                    },
+                    "recent_session_enabled_time": str(current_time),
+                    "recent_session_start_times": [str(current_time)],
+                    "session_last_active_time": str(current_time),
+                    "session_number": 2,
+                    "session_start_time": str(current_time)
+                },
+                "intl": {
+                    "selected_languages": "vi-VN,vi,fr-FR,fr,en-US,en" if profile_type == "cong_viec" else "en-US,en,fr-FR,fr,vi-VN,vi"
+                },
+                "invalidation": {"per_sender_topics_to_handler": {"1013309121859": {}}},
+                "media": {"engagement": {"schema_version": 5}},
+                "media_router": {"receiver_id_hash_token": base64.b64encode(os.urandom(32)).decode('ascii')},
+                "migrated_user_scripts_toggle": True,
+                "ntp": {"num_personal_suggestions": 1},
+                "omnibox": {"shown_count_history_scope_promo": 1},
+                "optimization_guide": {
+                    "hintsfetcher": {"hosts_successfully_fetched": {}},
+                    "previously_registered_optimization_types": {
+                        "ABOUT_THIS_SITE": True, "DIGITAL_CREDENTIALS_LOW_FRICTION": True,
+                        "LOADING_PREDICTOR": True, "MERCHANT_TRUST_SIGNALS_V2": True,
+                        "PRICE_TRACKING": True, "SAVED_TAB_GROUP": True, "V8_COMPILE_HINTS": True
+                    }
+                },
+                "password_manager": {
+                    "autofillable_credentials_account_store_login_database": False,
+                    "autofillable_credentials_profile_store_login_database": False
+                },
+                "pinned_tabs": [],
+                "privacy_sandbox": {"first_party_sets_data_access_allowed_initialized": True},
+                "profile": {
+                    "avatar_index": 26,
+                    "background_password_check": {
+                        "check_fri_weight": 9, "check_interval": "2592000000000",
+                        "check_mon_weight": 6, "check_sat_weight": 6, "check_sun_weight": 6,
+                        "check_thu_weight": 9, "check_tue_weight": 9, "check_wed_weight": 9,
+                        "next_check_time": str(current_time + 168000000000)
+                    },
+                    "content_settings": {"exceptions": {}, "pref_version": 1},
+                    "created_by_version": "139.0.7258.139",
+                    "creation_time": str(current_timestamp - 3600),
+                    "exit_type": "Normal",
+                    "family_member_role": "not_in_family",
+                    "isolated_web_app": {"install": {"pending_initialization_count": 0}},
+                    "last_engagement_time": str(current_time),
+                    "managed": {
+                        "locally_parent_approved_extensions": {},
+                        "locally_parent_approved_extensions_migration_state": 1
+                    },
+                    "managed_user_id": "",
+                    "name": display_name,
+                    "password_hash_data_list": []
+                },
+                "safebrowsing": {
+                    "event_timestamps": {},
+                    "metrics_last_log_time": str(current_time),
+                    "scout_reporting_enabled_when_deprecated": False
+                },
+                "safety_hub": {"unused_site_permissions_revocation": {"migration_completed": True}},
+                "saved_tab_groups": {
+                    "did_enable_shared_tab_groups_in_last_session": False,
+                    "specifics_to_data_migration": True
+                },
+                "segmentation_platform": {
+                    "client_result_prefs": "ClIKDXNob3BwaW5nX3VzZXISQQo2DQAAAAAQtpaW57/S5xcaJAocChoNAAAAPxIMU2hvcHBpbmdVc2VyGgVPdGhlchIEEAIYBCADEPGWlue/0ucX",
+                    "uma_in_sql_start_time": str(current_time)
+                },
+                "sessions": {
+                    "event_log": [
+                        {"crashed": False, "time": str(current_time), "type": 0},
+                        {"did_schedule_command": True, "first_session_service": True, "tab_count": 1, "time": str(current_time + 1000000), "type": 2, "window_count": 1}
+                    ],
+                    "session_data_status": 3
+                },
+                "settings": {"force_google_safesearch": False},
+                "signin": {"allowed": False, "cookie_clear_on_exit_migration_notice_complete": True},
+                "site_search_settings": {"overridden_keywords": []},
+                "spellcheck": {
+                    "dictionaries": ["vi"] if profile_type == "cong_viec" else ["en"],
+                    "dictionary": ""
+                },
+                "sync": {
+                    "data_type_status_for_sync_to_signin": {},
+                    "encryption_bootstrap_token_per_account_migration_done": True,
+                    "feature_status_for_sync_to_signin": 5,
+                    "passwords_per_account_pref_migration_done": True
+                },
+                "syncing_theme_prefs_migrated_to_non_syncing": True,
+                "toolbar": {
+                    "pinned_cast_migration_complete": True,
+                    "pinned_chrome_labs_migration_complete": True
+                },
+                "translate_site_blacklist": [],
+                "translate_site_blocklist_with_time": {},
+                "web_apps": {
+                    "did_migrate_default_chrome_apps": ["MigrateDefaultChromeAppToWebAppsGSuite", "MigrateDefaultChromeAppToWebAppsNonGSuite"],
+                    "last_preinstall_synchronize_version": "139"
+                },
+                "zerosuggest": {"cachedresults": ")]}'\n[\"\",[\"giá tiêu hôm nay\",\"matheus cunha\",\"bão số 10 bualoi\",\"tử vi 12 con giáp\",\"uống nước chanh muối\",\"windows 10\",\"djokovic\",\"bệnh viện bạch mai\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[],{\"google:clientdata\":{\"bpc\":false,\"tlw\":false},\"google:groupsinfo\":\"Ci0Ikk4SKAokTuG7mWkgZHVuZyB0w6xtIGtp4bq/bSB0aOG7i25oIGjDoG5oKAo\\u003d\",\"google:suggestdetail\":[{\"zl\":10002},{\"google:entityinfo\":\"Cg0vZy8xMWZ5MTJfX21tEhZD4bqndSB0aOG7pyBiw7NuZyDEkcOhMoMUZGF0YTppbWFnZS9qcGVnO2Jhc2U2NCwvOWovNEFBUVNrWkpSZ0FCQVFBQUFRQUJBQUQvMndDRUFBa0dCd2dIQmdrSUJ3Z0tDZ2tMRFJZUERRd01EUnNVRlJBV0lCMGlJaUFkSHg4a0tEUXNKQ1l4Sng4ZkxUMHRNVFUzT2pvNkl5cy9SRDg0UXpRNU9qY0JDZ29LRFF3TkdnOFBHamNsSHlVM056YzNOemMzTnpjM056YzNOemMzTnpjM056YzNOemMzTnpjM056YzNOemMzTnpjM056YzNOemMzTnpjM056YzNOLy9BQUJFSUFFQUFRQU1CRVFBQ0VRRURFUUgveEFBY0FBQUJCQU1CQUFBQUFBQUFBQUFBQUFBRUF3VUdCd0FCQWdqL3hBQXpFQUFCQXdNQ0F3WUVCUVVBQUFBQUFBQUJBZ01FQUFVUkVpRUdNVUVUVVdGeGthRWpNb0d4QnhRVklzRWxORUtpc3YvRUFCc0JBQUlEQVFFQkFBQUFBQUFBQUFBQUFBUUZBQUlEQVFZSC84UUFNUkVBQVFRQkFnSUhCd1VCQUFBQUFBQUFBUUFDQXhFRUVpRUZRUk14VVhHQm9iRUdJakpoa2RIaEZDTkNVdkVWLzlvQURBTUJBQUlSQXhFQVB3Q3FNVlpDMnNQSW1vb2dWblVzbW9pQUtDSWJSc0FOeWEyQW9LcDNYYVVFdUpRUVFUME5Td3BTVWtSbHh6OFJKQTZIRzFVTWxMZHNJZHpTR1UxWHBncmpGSjVwVkRDbkU1U05xNkpiNUtweHlPYTd4VlVBa3BLdEtQRTFGZGdzb1ZwT3BRcXpSdXRqc0U4MmFLbVZKME9LME5nRXJVRHVBS3JrTzBoYTQ3QzkxQldCQmlNS3RuNUQ5UGJmWnhuS2xCS21SejE1UFVjNkJiSWRWcGgwZHMwcUp2WEtKR1dxTE5RUTQyU2hhRko1RWM2WUI3YVN3Z2cwZ0pDckc3dWhhMjFIdUZWSVlWcTJWN1VWWW51SEdISHhkbkhuR3kwUTBXeVFRdm9kcTRBMExPYVNaMWFFMUJvN2ZFUjYxYWlzT2pRTXZKZDA1emp1cVVWZGpkS0pod2x1TkJ4S2s3MVpwcGRJdFNmaGl3M0ZNMXFZdU02SW1EbHhTU2xLc2c0MGs4K1hTaGNxWmptRm9PNFcyT2RFelFlZjJ0Y1Raai82Mm1NWThseGhPb0thWUJLbGI3allIYnB5NVVORVc2ZFRpaXBYNlgwZXBNZDZzMXpocmNmbVdxWkZaMVlLM0l5MElCUElBa1k4cUlaTkU4MHh3Sjd3aEMwanJDQVlpUFBCZllvQ2hqcWEyRENlcFZ1a2t1SzYyclM2bkJ4a1ZDMGhjdFp2UmxMTllCVXBSV1YrQ2x2aTNDNlRucFRTSGt3bWtsQ0ZweU5haWNISGdFbjFyei9ITWwwVVFERFZvbUJ0bmRXM0tRM05YMkxoQzBGSnlrOU80anUzcnhjV1ZMRkxyWWQwYk5qeHl4NlhqOEh0SFlVd3dlRTRObnVqbDM3YVErOEFkQ0RnWTViYmM5OFU1WnhOK1IreUdBRjJ4TzVvYzlrT2NSOGhicmtKQUlQTGV0eGREMHBPZHpsV3A1RHRxbUF1dHlnV25HUWs0d2RzK0htUFB4cktERHlZd0oyR3EzUlduVzBnaGVjYmpHVmJybk1ob2NVUkdrT01oWExWcFVSbjJyM2tEK2tpYkoyZ0g2aEtIRFNTRU1Tby93Q1I3dWRhVXVMTWUyMVdwY1hLdjJqUDBxanpRWFFySi9CcTVKdHNPK0tES1hWcUxKT1Rwd2tCZlhmdjVlQnBGeExFWms2ZFpJcStwYnNHUVRVQUhpU1BRRlMxeS91UFhSaFRVTlNVYWRMZ1NkWTU3RUhIM3J6OC9EUkNDMkZ4SlBnam8yelAybllQQTJQTUNsdSs4UnR4MUlTKytBQ0Nuc3dlWjJ4NDlPWGpSUERPSHVnSmtrNi9SRU9jMXU1S2pWNXUxeXRKZ3ZPUm1nN0pMampTWHR5QWdwL2s1eDRjNk8xc3pZNUd0UHVpclBmL0FJc1paWFdHam1vWnhXNEp0d1RkUVA3NUpjZElHQjJvMlhqL0FGUDFwN2drZENHZG0zZ2xzMFBSVlJ1L1htbVRIZjVtakZpdDRHL3Q1MVpSSlBmTnA3cUdsTzlLN1FwUndEZFdiVzdjVVNEaEQ4Y0VaR2YzSlBMMFVmU2hjaU1sbW9JdkZrQWVRVS9Tbk9JREFhblIyNUNJTDZnR25DTk9vSGtRT2VQSGxTaDJUQzJReEYzdkRraTN5RWl3cEZ3MVkyNDdTSmtzZm1aQ3QxWkdkUGwzZlNrR2JtdmxjV3ROQmNEYjNPNmIvd0FUNHN1VmNyS2JiRGVrSWlORmF0Q1RqSldEcFAwVDcxNkgyYWp2R2tMdjVHdkw4b1BKY1E4ZkpDY1VXa3plR1cveUVMUzQxSVE2aGhwR0NnS0JTcE9ucHlCcHJpV3lVdGR6V3VUVDRRNGNsQ1ZXTzY3L0FOTmw4OXZoR21XeVhJRmY3RTZqMDl6WFhHZ29GdVRBVzBFdU5yRHpTd0RyVDBQZFFJZHFLSUxDQnR1aVc3YklVK3hGYWI3UjZRcEtHMHBQekVuQUhxUlJiWkdOWVNUc090Wk9ZNGNsZnY2WUxkWTRrS1FwUmpRNGlHaWxDY2x4UUFHZS9uWHkvTm5kTmx1bEErSTJtMGJRMWdDUnNya09RRkliZFMyc0wxS2JXckNzZDlaU3NrQnNxMWhNL0ZWeGtRTHdoRU4zNFNtRW5IUW5LZ2ZzSzlyN05OQnczWC9ZK2dTN0tQdmp1UUVHOFBHOHlFeUNsS0Z0WVNzSEdDbkhyOHdwaE1DeWJXaWNZQ1NIUWVhUnU5OHZGc2tCbDFMYThvQ3RhVUhBelJjYjJQMlN6VUxxMUJuck5HZENRbWUwQVBjMXg4bXBhaU1oWUxPMjIycnNweURnZklEOHhvZVFOMEcwWmhGN1oyMG5uaEZEVGQ2dGt1VGxsbUs4RnF3TWxXTi92aWhJNFg1UWRGSDhSRkJPT01PL1RZNE5iYzlsWmR3NG1zcWw2bTN6cTJ3VUpjQi81QTk2VU05anVMdmNmMnFIemMydlVueVhuLzhBcjRnSHgrUlVldW40Z3R3WklFS3c5bzRwT08ya09oc0s4Z2tIN2ltVUhzSGxrVlBJMGQxbjdLaDR2Q2QyQW9OY3gzaVJFYWU4eTFGZERaYkxTRlpUc3RXNDlhWVluRGp3cHJzZHh2ZS9xQjlsd3lmcVBmYUVJL0VlajNCVHpMellXQVBtMzdqL0FCUkwzTmNLS3FZbkZwYjI3SjFsdlhWYmExdmhzcDBnZ2tEQnBVd0RwcXRlVWpoWTdNNkhVVi8vMlE9PToNTWF0aGV1cyBDdW5oYUoHIzI4Mzg3NVI9Z3Nfc3NwPWVKemo0dFZQMXpjMFRLczBOSXFQejgwMVlQVGl6VTBzeVVndExWWklMczNMU0FRQWpTY0p4d3AGcAc\\u003d\",\"zl\":10002},{\"zl\":10002},{\"zl\":10002},{\"zl\":10002},{\"zl\":10002},{\"google:entityinfo\":\"CgkvbS8wOW43MGMSJFbDosyjbiDEkcO0zKNuZyB2acOqbiBxdcOizIBuIHbGocyjdDKDDGRhdGE6aW1hZ2UvanBlZztiYXNlNjQsLzlqLzRBQVFTa1pKUmdBQkFRQUFBUUFCQUFELzJ3Q0VBQWtHQndnSEJna0lCd2dLQ2drTERSWVBEUXdNRFJzVUZSQVdJQjBpSWlBZEh4OGtLRFFzSkNZeEp4OGZMVDB0TVRVM09qbzZJeXMvUkQ4NFF6UTVPamNCQ2dvS0RRd05HZzhQR2pjbEh5VTNOemMzTnpjM056YzNOemMzTnpjM056YzNOemMzTnpjM056YzNOemMzTnpjM056YzNOemMzTnpjM056YzNOLy9BQUJFSUFFQUFRQU1CRVFBQ0VRRURFUUgveEFBY0FBQUJCQU1CQUFBQUFBQUFBQUFBQUFBRUF3VUdCd0FCQWdqL3hBQXpFQUFCQXdNQ0F3WUVCUVVBQUFBQUFBQUJBZ01FQUFVUkVpRUdNVUVUVVdGeGthRWpNb0d4QnhRVklzRWxORUtpc3YvRUFCc0JBQUlEQVFFQkFBQUFBQUFBQUFBQUFBUUZBQUlEQVFZSC84UUFNUkVBQVFRQkFnSUhCd1VCQUFBQUFBQUFBUUFDQXhFRUVpRUZRUk14VVhHQm9iRUdJakpoa2RIaEZDTkNVdkVWLzlvQURBTUJBQUlSQXhFQVB3Q3FNVlpDMnNQSW1vb2dWblVzbW9pQUtDSWJSc0FOeWEyQW9LcDNYYVVFdUpRUVFUME5Td3BTVWtSbHh6OFJKQTZIRzFVTWxMZHNJZHpTR1UxWHBncmpGSjVwVkRDbkU1U05xNkpiNUtweHlPYTd4VlVBa3BLdEtQRTFGZGdzb1ZwT3BRcXpSdXRqc0U4MmFLbVZKME9LME5nRXJVRHVBS3JrTzBoYTQ3QzkxQldCQmlNS3RuNUQ5UGJmWnhuS2xCS21SejE1UFVjNkJiSWRWcGgwZHMwcUp2WEtKR1dxTE5RUTQyU2hhRko1RWM2WUI3YVN3Z2cwZ0pDckc3dWhhMjFIdUZWSVlWcTJWN1VWWW51SEdISHhkbkhuR3kwUTBXeVFRdm9kcTRBMExPYVNaMWFFMUJvN2ZFUjYxYWlzT2pRTXZKZDA1emp1cVVWZGpkS0pod2x1TkJ4S2s3MVpwcGRJdFNmaGl3M0ZNMXFZdU02SW1EbHhTU2xLc2c0MGs4K1hTaGNxWmptRm9PNFcyT2RFelFlZjJ0Y1Raai82Mm1NWThseGhPb0thWUJLbGI3allIYnB5NVVORVc2ZFRpaXBYNlgwZXBNZDZzMXpocmNmbVdxWkZaMVlLM0l5MElCUElBa1k4cUlaTkU4MHh3Sjd3aEMwanJDQVlpUFBCZllvQ2hqcWEyRENlcFZ1a2t1SzYyclM2bkJ4a1ZDMGhjdFp2UmxMTllCVXBSV1YrQ2x2aTNDNlRucFRTSGt3bWtsQ0ZweU5haWNISGdFbjFyei9ITWwwVVFERFZvbUJ0bmRXM0tRM05YMkxoQzBGSnlrOU80anUzcnhjV1ZMRkxyWWQwYk5qeHl4NlhqOEh0SFlVd3dlRTRObnVqbDM3YVErOEFkQ0RnWTViYmM5OFU1WnhOK1IreUdBRjJ4TzVvYzlrT2NSOGhicmtKQUlQTGV0eGREMHBPZHpsV3A1RHRxbUF1dHlnV25HUWs0d2RzK0htUFB4cktERHlZd0oyR3EzUlduVzBnaGVjYmpHVmJybk1ob2NVUkdrT01oWExWcFVSbjJyM2tEK2tpYkoyZ0g2aEtIRFNTRU1Tby93Q1I3dWRhVXVMTWUyMVdwY1hLdjJqUDBxanpRWFFySi9CcTVKdHNPK0tES1hWcUxKT1Rwd2tCZlhmdjVlQnBGeExFWms2ZFpJcStwYnNHUVRVQUhpU1BRRlMxeS91UFhSaFRVTlNVYWRMZ1NkWTU3RUhIM3J6OC9EUkNDMkZ4SlBnam8yelAybllQQTJQTUNsdSs4UnR4MUlTKytBQ0Nuc3dlWjJ4NDlPWGpSUERPSHVnSmtrNi9SRU9jMXU1S2pWNXUxeXRKZ3ZPUm1nN0pMampTWHR5QWdwL2s1eDRjNk8xc3pZNUd0UHVpclBmL0FJc1paWFdHam1vWnhXNEp0d1RkUVA3NUpjZElHQjJvMlhqL0FGUDFwN2drZENHZG0zZ2xzMFBSVlJ1L1htbVRIZjVtakZpdDRHL3Q1MVpSSlBmTnA3cUdsTzlLN1FwUndEZFdiVzdjVVNEaEQ4Y0VaR2YzSlBMMFVmU2hjaU1sbW9JdkZrQWVRVS9Tbk9JREFhblIyNUNJTDZnR25DTk9vSGtRT2VQSGxTaDJUQzJReEYzdkRraTN5RWl3cEZ3MVkyNDdTSmtzZm1aQ3QxWkdkUGwzZlNrR2JtdmxjV3ROQmNEYjNPNmIvd0FUNHN1VmNyS2JiRGVrSWlORmF0Q1RqSldEcFAwVDcxNkgyYWp2R2tMdjVHdkw4b1BKY1E4ZkpDY1VXa3plR1cveUVMUzQxSVE2aGhwR0NnS0JTcE9ucHlCcHJpV3lVdGR6V3VUVDRRNGNsQ1ZXTzY3L0FOTmw4OXZoR21XeVhJRmY3RTZqMDl6WFhHZ29GdVRBVzBFdU5yRHpTd0RyVDBQZFFJZHFLSUxDQnR1aVc3YklVK3hGYWI3UjZRcEtHMHBQekVuQUhxUlJiWkdOWVNUc090Wk9ZNGNsZnY2WUxkWTRrS1FwUmpRNGlHaWxDY2x4UUFHZS9uWHkvTm5kTmx1bEErSTJtMGJRMWdDUnNya09RRkliZFMyc0wxS2JXckNzZDlaU3NrQnNxMWhNL0ZWeGtRTHdoRU4zNFNtRW5IUW5LZ2ZzSzlyN05OQnczWC9ZK2dTN0tQdmp1UUVHOFBHOHlFeUNsS0Z0WVNzSEdDbkhyOHdwaE1DeWJXaWNZQ1NIUWVhUnU5OHZGc2tCbDFMYThvQ3RhVUhBelJjYjJQMlN6VUxxMUJuck5HZENRbWUwQVBjMXg4bXBhaU1oWUxPMjIycnNweURnZklEOHhvZVFOMEcwWmhGN1oyMG5uaEZEVGQ2dGt1VGxsbUs4RnF3TWxXTi92aWhJNFg1UWRGSDhSRkJPT01PL1RZNE5iYzlsWmR3NG1zcWw2bTN6cTJ3VUpjQi81QTk2VU05anVMdmNmMnFIemMydlVueVhuLzhBcjRnSHgrUlVldW40Z3R3WklFS3c5bzRwT08ya09oc0s4Z2tIN2ltVUhzSGxrVlBJMGQxbjdLaDR2Q2QyQW9OY3gzaVJFYWU4eTFGZERaYkxTRlpUc3RXNDlhWVluRGp3cHJzZHh2ZS9xQjlsd3lmcVBmYUVJL0VlajNCVHpMellXQVBtMzdqL0FCUkwzTmNLS3FZbkZwYjI3SjFsdlhWYmExdmhzcDBnZ2tEQnBVd0RwcXRlVWpoWTdNNkhVVi8vMlE9PToNTWF0aGV1cyBDdW5oYUoHIzI4Mzg3NVI9Z3Nfc3NwPWVKemo0dFZQMXpjMFRLczBOSXFQejgwMVlQVGl6VTBzeVVndExWWklMczNMU0FRQWpTY0p4d3AGcAc\\u003d\",\"zl\":10002},{\"zl\":10002}],\"google:suggesteventid\":\"8759783273581607990\",\"google:suggestrelevance\":[1257,1256,1255,1254,1253,1252,1251,1250],\"google:suggestsubtypes\":[[3,143,362,308],[3,143,362,308],[3,143,362,308],[3,143,362,308],[3,143,362,308],[3,143,362,308],[3,143,362,308],[3,143,362,308]],\"google:suggesttype\":[\"QUERY\",\"ENTITY\",\"QUERY\",\"QUERY\",\"QUERY\",\"QUERY\",\"ENTITY\",\"QUERY\"]}]"}
+            }
+            
+            # Ghi Preferences file
+            with open(preferences_path, 'w', encoding='utf-8') as f:
+                json.dump(preferences, f, ensure_ascii=False, indent=2)
+            
+            print(f"✅ [GPM-PREFERENCES] Đã tạo Preferences giống GPMLogin cho {display_name}")
+            
+        except Exception as e:
+            print(f"⚠️ [GPM-PREFERENCES] Lỗi tạo Preferences: {e}")
+
+    def _generate_user_agent(self, profile_type):
+        """Tạo User-Agent phù hợp với profile type"""
+        import random
+        
+        if profile_type == "work":
+            # Work profile: Windows 11 với Chrome mới nhất
+            chrome_versions = ["120.0.6099.109", "120.0.6099.129", "121.0.6167.85", "121.0.6167.140"]
+            chrome_version = random.choice(chrome_versions)
+            return f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{chrome_version} Safari/537.36"
+        elif profile_type == "cong_viec":
+            # Công việc profile: Windows 11 với Chrome mới nhất
+            chrome_versions = ["120.0.6099.109", "120.0.6099.129", "121.0.6167.85", "121.0.6167.140"]
+            chrome_version = random.choice(chrome_versions)
+            return f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{chrome_version} Safari/537.36"
+        else:
+            # Default
+            return "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.109 Safari/537.36"
+
+    def _get_antidetect_chrome_flags(self):
+        """Lấy danh sách Chrome flags cho antidetect - Cải thiện để tránh unusual traffic"""
+        return [
+            # Core antidetect flags
+            "--disable-blink-features=AutomationControlled",
+            "--disable-features=VizDisplayCompositor",
+            "--disable-ipc-flooding-protection",
+            "--disable-renderer-backgrounding",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-client-side-phishing-detection",
+            "--disable-sync",
+            "--disable-default-apps",
+            "--disable-plugins-discovery",
+            "--disable-preconnect",
+            "--disable-translate",
+            "--disable-web-security",
+            "--disable-features=TranslateUI",
+            "--no-first-run",
+            "--no-default-browser-check",
+            # "--no-sandbox",  # bỏ, sẽ được lọc an toàn ở bước sau nếu tồn tại
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-software-rasterizer",
+            "--disable-background-timer-throttling",
+            "--force-webrtc-ip-handling-policy=default_public_interface_only",
+            "--enable-features=WebRtcHideLocalIpsWithMdns",
+            "--disable-web-security",
+            "--disable-features=VizDisplayCompositor",
+            "--disable-background-networking",
+            "--disable-background-timer-throttling",
+            # Flags để tránh unusual traffic
+            "--disable-ipv6",
+            "--disable-quic", 
+            "--disable-dns-prefetch",
+            "--disable-features=UseDnsHttpsSvcb",
+            "--disable-features=VizDisplayCompositor",
+            "--disable-background-networking",
+            "--disable-background-timer-throttling",
+            "--disable-client-side-phishing-detection",
+            "--disable-sync",
+            "--disable-default-apps",
+            "--disable-extensions",
+            "--disable-plugins-discovery",
+            "--disable-preconnect",
+            "--disable-translate",
+            "--disable-web-security",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-software-rasterizer",
+            "--disable-background-timer-throttling",
+            "--disable-renderer-backgrounding",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-ipc-flooding-protection",
+            "--disable-features=TranslateUI",
+            "--disable-features=AutofillEnableAccountWalletStorage",
+            "--disable-hang-monitor",
+            "--disable-prompt-on-repost",
+            "--disable-domain-reliability",
+            "--disable-component-extensions-with-background-pages",
+            "--disable-background-mode",
+            "--disable-features=NetworkServiceInProcess",
+            "--disable-features=OptimizationHints",
+            "--disable-features=Translate",
+            "--disable-features=MediaRouter",
+            "--disable-features=AutofillServerCommunication",
+            "--disable-features=SafeBrowsingEnhancedProtection",
+            "--disable-features=PasswordImport",
+            "--disable-features=PasswordLeakDetection",
+            "--disable-features=AutofillEnableAccountWalletStorage",
+            "--disable-features=AutofillEnableGooglePayBrandingOnNonGPayMerchants",
+            "--disable-features=AutofillEnableAccountWalletStorage",
+            "--disable-hang-monitor",
+            "--disable-prompt-on-repost",
+            "--disable-domain-reliability",
+            "--disable-component-extensions-with-background-pages",
+            "--disable-background-networking",
+            "--disable-features=TranslateUI,BlinkGenPropertyTrees",
+            "--disable-ipc-flooding-protection",
+            "--disable-renderer-backgrounding",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-client-side-phishing-detection",
+            "--disable-sync",
+            "--disable-default-apps",
+            "--disable-extensions",
+            "--disable-plugins-discovery",
+            "--disable-preconnect",
+            "--disable-translate",
+            "--disable-web-security",
+            "--disable-features=TranslateUI",
+            "--disable-ipc-flooding-protection",
+            "--no-first-run",
+            "--no-default-browser-check",
+            # "--no-sandbox",  # bỏ, sẽ được lọc an toàn ở bước sau nếu tồn tại
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-software-rasterizer",
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
+            "--disable-features=TranslateUI",
+            "--disable-ipc-flooding-protection",
+            "--force-webrtc-ip-handling-policy=default_public_interface_only",
+            "--enable-features=WebRtcHideLocalIpsWithMdns"
+        ]
+
+    def _get_antidetect_chrome_preferences(self, profile_type):
+        """Lấy Chrome preferences cho antidetect"""
+        import random
+        
+        prefs = {
+            "profile": {
+                "default_content_setting_values": {
+                    "notifications": 2,
+                    "geolocation": 2,
+                    "media_stream": 2
+                },
+                "content_settings": {
+                    "exceptions": {
+                        "notifications": {
+                            "*": {"setting": 2}
+                        }
+                    }
+                },
+                "content_settings": {
+                    "pattern_pairs": {
+                        "https://*,*": {
+                            "notifications": 2,
+                            "geolocation": 2,
+                            "media_stream": 2
+                        }
+                    }
+                },
+                "managed_default_content_settings": {
+                    "notifications": 2,
+                    "geolocation": 2,
+                    "media_stream": 2
+                }
+            },
+            "gcm": {
+                "product_category_for_subtypes": "",
+                "wake_from_idle": False
+            },
+            "invalidations": {
+                "service_enabled": False
+            },
+            "webrtc": {
+                "ip_handling_policy": "default_public_interface_only",
+                "multiple_routes_enabled": False,
+                "nonproxied_udp_enabled": False
+            },
+            "intl": {
+                "accept_languages": "en-US,en,vi-VN,vi" if profile_type == "cong_viec" else "en-US,en,en-GB",
+                "selected_languages": ["en-US", "vi-VN"] if profile_type == "cong_viec" else ["en-US", "en-GB"]
+            },
+            "browser": {
+                "check_default_browser": False,
+                "show_home_button": False
+            },
+            "safebrowsing": {
+                "enabled": False,
+                "scout_reporting_enabled_when_deprecated": False
+            },
+            "distribution": {
+                "skip_first_run_ui": True,
+                "import_bookmarks": False,
+                "import_history": False,
+                "import_search_engine": False
+            },
+            "first_run_tabs": [],
+            "homepage": "",
+            "homepage_is_newtabpage": True,
+            "session": {
+                "restore_on_startup": 1,
+                "startup_urls": []
+            },
+            "default_search_provider_data": {
+                "template_url_data": []
+            },
+            "profile": {
+                "password_manager_enabled": False,
+                "safebrowsing": {
+                    "enabled": False
+                }
+            }
+        }
+        
+        return prefs
+
+    def _apply_stealth_evasion(self, driver, profile_path):
+        """Áp dụng stealth evasion để tránh phát hiện automation"""
+        try:
+            # Đọc antidetect settings
+            settings_path = os.path.join(profile_path, 'profile_settings.json')
+            if not os.path.exists(settings_path):
+                return
+            
+            import json
+            with open(settings_path, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+            
+            antidetect = settings.get('antidetect', {})
+            if not antidetect.get('enabled', False):
+                return
+            
+            # CDP script để ẩn webdriver và spoof các thuộc tính - Cải thiện để tránh unusual traffic
+            stealth_script = """
+            // Ẩn webdriver hoàn toàn
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+            });
+            
+            // Xóa automation indicators
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+            
+            // Spoof plugins với plugins thật
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [
+                    {name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer'},
+                    {name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai'},
+                    {name: 'Native Client', filename: 'internal-nacl-plugin'}
+                ],
+            });
+            
+            // Spoof languages theo profile type
+            const languages = /*#__PURE__*/ (function(){ return """ + json.dumps(['en-US', 'en']) + """; })();
+            Object.defineProperty(navigator, 'languages', {
+                get: () => languages,
+            });
+            
+            // Spoof chrome object hoàn chỉnh
+            window.chrome = {
+                runtime: {
+                    onConnect: undefined,
+                    onMessage: undefined,
+                },
+                loadTimes: function() {
+                    return {
+                        requestTime: performance.now(),
+                        startLoadTime: performance.now(),
+                        commitLoadTime: performance.now(),
+                        finishDocumentLoadTime: performance.now(),
+                        finishLoadTime: performance.now(),
+                        firstPaintTime: performance.now(),
+                        firstPaintAfterLoadTime: 0,
+                        navigationType: 'navigate'
+                    };
+                },
+                csi: function() {
+                    return {
+                        pageT: performance.now(),
+                        startE: performance.now(),
+                        tran: 15
+                    };
+                },
+                app: {
+                    isInstalled: false,
+                    InstallState: {
+                        DISABLED: 'disabled',
+                        INSTALLED: 'installed',
+                        NOT_INSTALLED: 'not_installed'
+                    },
+                    RunningState: {
+                        CANNOT_RUN: 'cannot_run',
+                        READY_TO_RUN: 'ready_to_run',
+                        RUNNING: 'running'
+                    }
+                }
+            };
+            
+            // Fix permissions.query
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+            
+            // Mask WebGL
+            const getParameter = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(parameter) {
+                if (parameter === 37445) {
+                    return 'Intel Inc.';
+                }
+                if (parameter === 37446) {
+                    return 'Intel Iris OpenGL Engine';
+                }
+                return getParameter(parameter);
+            };
+            
+            // Add Canvas noise
+            const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+            HTMLCanvasElement.prototype.toDataURL = function() {
+                const context = this.getContext('2d');
+                const imageData = context.getImageData(0, 0, this.width, this.height);
+                for (let i = 0; i < imageData.data.length; i += 4) {
+                    imageData.data[i] = imageData.data[i] ^ Math.floor(Math.random() * 255);
+                }
+                context.putImageData(imageData, 0, 0);
+                return originalToDataURL.apply(this, arguments);
+            };
+            
+            // Spoof screen properties
+            Object.defineProperty(screen, 'availHeight', {
+                get: () => 1040,
+            });
+            Object.defineProperty(screen, 'availWidth', {
+                get: () => 1920,
+            });
+            Object.defineProperty(screen, 'colorDepth', {
+                get: () => 24,
+            });
+            Object.defineProperty(screen, 'height', {
+                get: () => 1080,
+            });
+            Object.defineProperty(screen, 'width', {
+                get: () => 1920,
+            });
+            
+            // Spoof timezone
+            const originalDateToString = Date.prototype.toString;
+            Date.prototype.toString = function() {
+                return originalDateToString.call(this).replace(/GMT[+-]\d{4}/, 'GMT+0700');
+            };
+            """
+            
+            # Execute stealth script
+            driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
+                'source': stealth_script
+            })
+            
+            print(f"✅ [STEALTH] Đã áp dụng stealth evasion cho profile")
+            
+        except Exception as e:
+            print(f"⚠️ [STEALTH] Lỗi áp dụng stealth evasion: {e}")
+
+    def _randomize_profile_fingerprint(self, profile_path: str) -> None:
+        """Random hóa các định danh cục bộ trong profile để tránh trùng lặp.
+
+        Lưu ý: Chrome không cho phép thay đổi MAC thật của hệ thống. Mục tiêu ở đây là:
+        - Tạo `Local State` mới với client_id/metrics_client_id khác nhau giữa các profiles
+        - Random hóa các seed liên quan đến variations/metrics
+        - Điều chỉnh Preferences để hạn chế lộ IP cục bộ qua WebRTC (giảm fingerprint)
+        """
+        import uuid, base64, os, json
+
+        # Đường dẫn tệp trong thư mục user-data-dir của profile tùy chỉnh
+        local_state_path = os.path.join(profile_path, "Local State")
+        preferences_path = os.path.join(profile_path, "Preferences")
+
+        # 1) Tạo/ghi Local State với client_id và variations seed ngẫu nhiên
+        local_state = {}
+        try:
+            if os.path.exists(local_state_path):
+                with open(local_state_path, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    if content:
+                        local_state = json.loads(content)
+        except Exception:
+            local_state = {}
+
+        # Tạo các giá trị ngẫu nhiên
+        new_client_id = str(uuid.uuid4())
+        new_variations_seed = base64.b64encode(os.urandom(16)).decode('ascii')
+
+        # user_experience_metrics.client_id
+        uxm = local_state.get("user_experience_metrics", {})
+        uxm["client_id"] = new_client_id
+        local_state["user_experience_metrics"] = uxm
+
+        # metrics.reporting_enabled có thể để nguyên, chỉ đổi id
+        metrics = local_state.get("metrics", {})
+        metrics["client_id"] = new_client_id
+        local_state["metrics"] = metrics
+
+        # variations seed
+        variations = local_state.get("variations", {})
+        variations["seed"] = new_variations_seed
+        variations.pop("seed_signature", None)  # bỏ signature cũ nếu có
+        local_state["variations"] = variations
+
+        # Ghi Local State
+        with open(local_state_path, 'w', encoding='utf-8') as f:
+            json.dump(local_state, f, ensure_ascii=False, indent=2)
+
+        # 2) Chỉnh Preferences để hạn chế WebRTC lộ IP cục bộ
+        prefs = {}
+        try:
+            if os.path.exists(preferences_path):
+                with open(preferences_path, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    if content:
+                        prefs = json.loads(content)
+        except Exception:
+            prefs = {}
+
+        webrtc = prefs.get("webrtc", {})
+        # Chính sách: chỉ dùng public interface, tắt nhiều route, tắt UDP ngoài proxy
+        webrtc["ip_handling_policy"] = "default_public_interface_only"
+        webrtc["multiple_routes"] = False
+        webrtc["non_proxied_udp"] = False
+        prefs["webrtc"] = webrtc
+
+        # Đảm bảo tên profile không bị trùng lặp/rối (optional)
+        profile_block = prefs.get("profile", {})
+        # Không đổi name ở đây; chỉ đảm bảo có khóa
+        prefs["profile"] = profile_block
+
+        with open(preferences_path, 'w', encoding='utf-8') as f:
+            json.dump(prefs, f, ensure_ascii=False, indent=2)
     
     def _create_default_profile(self):
         """Tạo profile Default từ Chrome mặc định"""
@@ -429,11 +1627,7 @@ class ChromeProfileManager:
                 }
             }
             
-            # Lưu preferences
-            import json
-            prefs_path = os.path.join(profile_path, "Preferences")
-            with open(prefs_path, 'w') as f:
-                json.dump(preferences, f, indent=2)
+            # KHÔNG ghi Preferences ở root; để Chrome tự tạo trong Default sau khi launch
             
         except Exception as e:
             print(f"Lỗi khi tối ưu hóa profile: {str(e)}")
@@ -456,10 +1650,132 @@ class ChromeProfileManager:
         # NO --disable-plugins
         # NO --disable-background-networking
         # NO other network-related arguments
-    
-    
-    
-    
+    def _prelaunch_hardening(self, profile_path: str, language: str = None) -> None:
+        """Harden profile prefs and local state to reduce Google beacons and automation signals.
+        - Writes Default/Preferences: intl.accept_languages, signin, google, gcm, safebrowsing
+        - Scrubs Local State 'google' block to avoid GCM registrations
+        """
+        try:
+            import json as _json
+            os.makedirs(os.path.join(profile_path, 'Default'), exist_ok=True)
+
+            # 1) Update Default/Preferences
+            prefs_path = os.path.join(profile_path, 'Default', 'Preferences')
+            prefs_obj = None
+            if os.path.exists(prefs_path):
+                try:
+                    with open(prefs_path, 'r', encoding='utf-8') as pf:
+                        content = pf.read().strip()
+                        if content:
+                            prefs_obj = _json.loads(content)
+                        else:
+                            prefs_obj = {}
+                except Exception:
+                    prefs_obj = {}
+
+            if isinstance(prefs_obj, dict):
+                if language:
+                    intl = prefs_obj.get('intl', {})
+                    intl['accept_languages'] = language
+                    prefs_obj['intl'] = intl
+
+            # Disable Google signin, GCM beacons, and SafeBrowsing reporting
+            if isinstance(prefs_obj, dict):
+                prefs_obj['google'] = {}
+                prefs_obj['signin'] = {"allowed": False}
+                gcm = prefs_obj.get('gcm', {})
+                gcm['product_category_for_subtypes'] = ""
+                gcm['wake_from_idle'] = False
+                prefs_obj['gcm'] = gcm
+                sb = prefs_obj.get('safebrowsing', {})
+                sb['enabled'] = False
+                sb['scout_reporting_enabled_when_deprecated'] = False
+                prefs_obj['safebrowsing'] = sb
+
+            # Ensure minimal search config and disable omnibox suggest to avoid background queries
+            if isinstance(prefs_obj, dict):
+                search_block = prefs_obj.get('search', {})
+                search_block['engine_choice'] = {"made_by_user": True}
+                prefs_obj['search'] = search_block
+
+            # Disable omnibox suggestions and client hints to Google
+            if isinstance(prefs_obj, dict):
+                omnibox = prefs_obj.get('omnibox', {})
+                omnibox['suggestion_enabled'] = False
+                omnibox['suppress_suggestions'] = True
+                prefs_obj['omnibox'] = omnibox
+
+            # Reduce client hints / hints to Google domains
+            if isinstance(prefs_obj, dict):
+                prefs_obj.setdefault('privacy_sandbox', {})
+                ch = prefs_obj.get('client_hints', {})
+                ch['enabled'] = False
+                prefs_obj['client_hints'] = ch
+
+            if isinstance(prefs_obj, dict):
+                session_block = prefs_obj.get('session', {})
+                session_block['restore_on_startup'] = 1
+                session_block['startup_urls'] = []
+                prefs_obj['session'] = session_block
+                profile_block = prefs_obj.get('profile', {})
+                profile_block['exit_type'] = 'Normal'
+                prefs_obj['profile'] = profile_block
+                with open(prefs_path, 'w', encoding='utf-8') as pfw:
+                    _json.dump(prefs_obj, pfw, ensure_ascii=False, indent=2)
+
+            # 2) Update Local State: drop 'google' block to avoid background registrations
+            local_state_path = os.path.join(profile_path, 'Local State')
+            if os.path.exists(local_state_path):
+                try:
+                    with open(local_state_path, 'r', encoding='utf-8') as lf:
+                        ls_content = lf.read().strip()
+                        if ls_content:
+                            ls = _json.loads(ls_content)
+                        else:
+                            ls = {}
+                except Exception:
+                    ls = {}
+
+                if 'google' in ls:
+                    try:
+                        del ls['google']
+                    except Exception:
+                        pass
+                # Remove GCM/invalidations blocks if present to stop background registrations
+                for _k in ('gcm', 'invalidation', 'invalidations'):
+                    if _k in ls:
+                        try:
+                            del ls[_k]
+                        except Exception:
+                            pass
+
+                with open(local_state_path, 'w', encoding='utf-8') as lfw:
+                    _json.dump(ls, lfw, ensure_ascii=False)
+
+            # Xóa artefacts phiên để không còn gì để khôi phục
+            try:
+                import glob, shutil as _shutil
+                default_dir = os.path.join(profile_path, 'Default')
+                sessions_dir = os.path.join(default_dir, 'Sessions')
+                if os.path.isdir(sessions_dir):
+                    _shutil.rmtree(sessions_dir, ignore_errors=True)
+                remove_patterns = [
+                    'Current Session', 'Current Tabs', 'Last Session', 'Last Tabs',
+                    'Sessions*', 'Tabs_*', 'Session_*'
+                ]
+                for pat in remove_patterns:
+                    for fp in glob.glob(os.path.join(default_dir, pat)):
+                        try:
+                            if os.path.isdir(fp):
+                                _shutil.rmtree(fp, ignore_errors=True)
+                            else:
+                                os.remove(fp)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+        except Exception as _e:
+            print(f"⚠️ [HARDEN] Không thể harden prefs/local state: {_e}")
     
     def launch_chrome_profile(self, profile_name, hidden=True, auto_login=False, login_data=None, start_url=None, optimized_mode=False, ultra_low_memory=False):
         """Khởi động Chrome với profile cụ thể
@@ -479,6 +1795,11 @@ class ChromeProfileManager:
             
             self.current_profile_name = profile_name
             profile_path = os.path.join(self.profiles_dir, profile_name)
+            # Dọn nested dir trùng tên nếu có trước khi mở
+            try:
+                self._dedupe_nested_profile_dir(profile_path)
+            except Exception:
+                pass
             
             if not os.path.exists(profile_path):
                 print(f"❌ [LAUNCH] Profile không tồn tại: {profile_name}")
@@ -490,9 +1811,232 @@ class ChromeProfileManager:
             # Clean cache
             self._cleanup_profile_cache(profile_path)
             
+            # Xóa cache profile cũ để Chrome nhận diện tên mới
+            self._clear_profile_name_cache(profile_path)
+
+            # Pre-harden prefs & local state before starting Chrome
+            try:
+                # Try to align language with software.language if possible
+                _lang_hint = None
+                try:
+                    _settings_probe = os.path.join(profile_path, 'profile_settings.json')
+                    if os.path.exists(_settings_probe):
+                        import json as _json
+                        with open(_settings_probe, 'r', encoding='utf-8') as sf:
+                            _ps = _json.load(sf)
+                            _lang_hint = (_ps.get('software') or {}).get('language')
+                except Exception:
+                    pass
+                self._prelaunch_hardening(profile_path, _lang_hint)
+            except Exception as _e:
+                print(f"⚠️ [LAUNCH] Hardening trước khi khởi động thất bại: {_e}")
+            
+            # Đọc cấu hình profile tuỳ chỉnh (nếu có)
+            custom_settings = {}
+            try:
+                settings_path = os.path.join(profile_path, 'profile_settings.json')
+                if os.path.exists(settings_path):
+                    import json as _json
+                    with open(settings_path, 'r', encoding='utf-8') as f:
+                        custom_settings = _json.load(f)
+            except Exception as _e:
+                print(f"⚠️ [LAUNCH] Không đọc được profile_settings.json: {_e}")
+            
             # Cấu hình Chrome options
             chrome_options = Options()
             chrome_options.add_argument(f"--user-data-dir={profile_path}")
+            # Ghi log Chrome vào file trong profile
+            try:
+                logs_dir = os.path.join(profile_path, 'logs')
+                os.makedirs(logs_dir, exist_ok=True)
+                chrome_log = os.path.join(logs_dir, 'chrome.log')
+                chrome_options.add_argument("--enable-logging")
+                chrome_options.add_argument("--v=1")
+                chrome_options.add_argument(f"--log-file={chrome_log}")
+                # Giảm độ ồn log lỗi từ GCM/USB nếu người dùng không cần chi tiết
+                chrome_options.add_argument("--log-level=2")  # WARNING trở lên
+                chrome_options.add_argument("--vmodule=gcm*=0,device_event_log*=0,usb*=0")
+            except Exception:
+                pass
+            # Giảm tín hiệu automation và hạn chế IPv6 (Google hay gắn cờ IPv6/MDNS)
+            try:
+                chrome_options.add_experimental_option("excludeSwitches", [
+                    "enable-automation",
+                    "enable-logging",
+                    "enable-blink-features"
+                ])
+                chrome_options.add_experimental_option("useAutomationExtension", False)
+            except Exception:
+                pass
+            # Ưu tiên IPv4, tắt IPv6 để tránh captcha theo mạng
+            chrome_options.add_argument("--disable-features=NetworkServiceInProcess,OptimizationHints,InterestFeedContentSuggestions,PushMessaging,NotificationTriggers,BackgroundFetch,BackgroundSync,UseGCMChannel")
+            chrome_options.add_argument("--disable-features=PrefetchPrivacyChanges,AutofillServerCommunication,PrivacySandboxAdsAPIs,AttributionReportingCrossAppWeb,AttributionReportingDebug")
+            # Ưu tiên chặn ở DNS cho các host GCM/FCM/clients của Google để triệt yêu cầu nền
+            try:
+                block_hosts = [
+                    'mtalk.google.com',
+                    'fcm.googleapis.com',
+                    'gcm.googleapis.com',
+                    'clientservices.googleapis.com',
+                    'clients4.google.com',
+                    'clients6.google.com',
+                    'clients2.google.com',
+                    'firebaseinstallations.googleapis.com',
+                ]
+                rules = [f"MAP {h} 0.0.0.0" for h in block_hosts]
+                rules.append("EXCLUDE localhost")
+                chrome_options.add_argument(f"--host-resolver-rules={','.join(rules)}")
+            except Exception:
+                pass
+            # Lưu ý: không tắt toàn cục host-resolver, chỉ map các host cụ thể ở trên
+            chrome_options.add_argument("--disable-ipv6")
+            chrome_options.add_argument("--disable-features=UseDnsHttpsSvcb")
+            # Tắt QUIC để bớt bị gắn cờ bởi Google khi sử dụng mạng/proxy lạ
+            chrome_options.add_argument("--disable-quic")
+            # Giảm prefetch/preconnect/pings
+            chrome_options.add_argument("--disable-dns-prefetch")
+            chrome_options.add_argument("--no-pings")
+            chrome_options.add_argument("--disable-client-side-phishing-detection")
+            chrome_options.add_argument("--safebrowsing-disable-auto-update")
+            # Giảm beacon nền và push để hạn chế unusual traffic
+            chrome_options.add_argument("--disable-notifications")
+            chrome_options.add_argument("--disable-background-sync")
+            chrome_options.add_argument("--disable-permissions-api")
+            # Ẩn log USB device trên Windows (thiếu thiết bị USB sẽ gây ERROR spam)
+            chrome_options.add_argument("--disable-features=UsbDeviceCapabilities,UsbDeviceDetection")
+            # Tuỳ chọn mạnh: tắt hẳn USB stack (nếu vẫn còn log)
+            chrome_options.add_argument("--disable-usb")
+            chrome_options.add_argument("--disable-component-update")
+            chrome_options.add_argument("--disable-features=PushMessaging,NotificationTriggers,BackgroundFetch,BackgroundSync,UseGCMChannel")
+            chrome_options.add_argument("--disable-component-extensions-with-background-pages")
+            chrome_options.add_argument("--disable-sync")
+            # Ngăn GCM channel đăng ký
+            chrome_options.add_argument("--disable-features=UseGCMChannel")
+            
+            # Sử dụng --profile-directory để hiển thị tên profile tùy chỉnh
+            # Lấy display name từ settings hoặc sử dụng tên profile
+            profile_info = custom_settings.get('profile_info', {})
+            profile_display_name = profile_info.get('display_name', profile_name)
+            chrome_options.add_argument(f"--profile-directory={profile_display_name}")
+            
+            # Áp dụng antidetect flags
+            antidetect = custom_settings.get('antidetect', {})
+            if antidetect.get('enabled', False):
+                chrome_flags = custom_settings.get('chrome_flags', [])
+                for flag in chrome_flags:
+                    chrome_options.add_argument(flag)
+            
+            # Áp dụng một số tùy chọn Software từ custom_settings
+            sw = custom_settings.get('software', {})
+            # Kết hợp với gpm_defaults nếu profile không ghi đè
+            if isinstance(self.gpm_defaults, dict):
+                sw.setdefault('user_agent', self.gpm_defaults.get('user_agent'))
+                sw.setdefault('language', self.gpm_defaults.get('language'))
+                sw.setdefault('webrtc_policy', self.gpm_defaults.get('webrtc_policy'))
+                sw.setdefault('raw_proxy', self.gpm_defaults.get('raw_proxy'))
+
+            ua = (sw.get('user_agent') or '').strip()
+            if ua:
+                chrome_options.add_argument(f"--user-agent={ua}")
+            lang = (sw.get('language') or '').strip() or 'en-US'
+            if lang:
+                chrome_options.add_argument(f"--lang={lang}")
+                chrome_options.add_argument(f"--accept-lang={lang}")
+                # Ghi vào Preferences: intl.accept_languages
+                try:
+                    prefs_path = os.path.join(profile_path, 'Default', 'Preferences')
+                    prefs_obj = {}
+                    if os.path.exists(prefs_path):
+                        import json as _json
+                        with open(prefs_path, 'r', encoding='utf-8') as pf:
+                            content = pf.read().strip()
+                            if content:
+                                prefs_obj = _json.loads(content)
+                    # Set languages
+                    intl = prefs_obj.get('intl', {})
+                    intl['accept_languages'] = lang
+                    prefs_obj['intl'] = intl
+                    # Đặt DuckDuckGo làm search engine mặc định để tránh Google CAPTCHA khi gõ từ thanh địa chỉ
+                    dse = {
+                        "enabled": True,
+                        "name": "DuckDuckGo",
+                        "keyword": "duckduckgo.com",
+                        "search_url": "https://duckduckgo.com/?q={searchTerms}",
+                        "suggest_url": "",
+                        "favicon_url": "https://duckduckgo.com/favicon.ico",
+                        "id": 0
+                    }
+                    prefs_obj['default_search_provider'] = dse
+                    prefs_obj['default_search_provider_data'] = {"template_url_data": dse}
+                    # Đánh dấu đã chọn search engine
+                    se_choice = prefs_obj.get('search', {})
+                    se_choice['engine_choice'] = {"made_by_user": True}
+                    prefs_obj['search'] = se_choice
+                    with open(prefs_path, 'w', encoding='utf-8') as pfw:
+                        import json as _json
+                        _json.dump(prefs_obj, pfw, ensure_ascii=False, indent=2)
+                except Exception as _e:
+                    print(f"⚠️ [LAUNCH] Không ghi được intl.accept_languages: {_e}")
+
+            # Đồng bộ Accept-Language và UA qua CDP càng sớm càng tốt
+            try:
+                # Tạo driver tối thiểu rồi set header qua Network.setUserAgentOverride khi driver sẵn
+                pass
+            except Exception:
+                pass
+            webrtc_policy = (sw.get('webrtc_policy') or '').strip()
+            if webrtc_policy:
+                chrome_options.add_argument(f"--force-webrtc-ip-handling-policy={webrtc_policy}")
+                # Đồng bộ thêm vào Preferences.webrtc
+                try:
+                    prefs_path = os.path.join(profile_path, 'Default', 'Preferences')
+                    prefs_obj = {}
+                    if os.path.exists(prefs_path):
+                        import json as _json
+                        with open(prefs_path, 'r', encoding='utf-8') as pf:
+                            content = pf.read().strip()
+                            if content:
+                                prefs_obj = _json.loads(content)
+                    webrtc = prefs_obj.get('webrtc', {})
+                    if webrtc_policy == 'default_public_interface_only':
+                        webrtc['ip_handling_policy'] = 'default_public_interface_only'
+                        webrtc['multiple_routes'] = False
+                        webrtc['non_proxied_udp'] = False
+                    elif webrtc_policy == 'disable_non_proxied_udp':
+                        webrtc['ip_handling_policy'] = 'disable_non_proxied_udp'
+                        webrtc['multiple_routes'] = False
+                        webrtc['non_proxied_udp'] = False
+                    else:
+                        webrtc['ip_handling_policy'] = 'default'
+                    prefs_obj['webrtc'] = webrtc
+                    with open(prefs_path, 'w', encoding='utf-8') as pfw:
+                        import json as _json
+                        _json.dump(prefs_obj, pfw, ensure_ascii=False, indent=2)
+                except Exception as _e:
+                    print(f"⚠️ [LAUNCH] Không ghi được webrtc prefs: {_e}")
+            # Hardware (tham số chủ yếu lưu trữ; có mục tiêu mở rộng trong tương lai)
+            # Hiện tại chúng ta không thể thay đổi MAC thật; giá trị được lưu để hiển thị.
+
+            # Không mở trang có thể kích hoạt captcha ngay khi khởi động
+            # Tránh mở google.com, chrome://welcome, hoặc các URL search ngay lập tức
+            chrome_options.add_argument("--homepage=about:blank")
+            chrome_options.add_argument("--restore-last-session=false")
+            chrome_options.add_argument("--new-tab")
+
+            # Áp dụng proxy từ sw.raw_proxy (nếu có, dạng user:pass@host:port hoặc host:port)
+            raw_proxy = (sw.get('raw_proxy') or '').strip()
+            if raw_proxy:
+                try:
+                    # Hỗ trợ cả socks5/http: prefix nếu người dùng điền
+                    if '://' in raw_proxy:
+                        proxy_url = raw_proxy
+                    else:
+                        # Mặc định http
+                        proxy_url = f"http://{raw_proxy}"
+                    chrome_options.add_argument(f"--proxy-server={proxy_url}")
+                    print(f"🌐 [PROXY] Đã áp dụng proxy: {proxy_url}")
+                except Exception as _pe:
+                    print(f"⚠️ [PROXY] Không áp dụng được proxy: {_pe}")
             
             # Decide configuration based on login flow
             def _is_login_like_url(url: str) -> bool:
@@ -513,7 +2057,12 @@ class ChromeProfileManager:
                 # Use stable/base config for login and normal flows
                 if login_flow and optimized_mode:
                     print(f"🛡️ [LAUNCH] Login flow detected → using base config (ignore optimized flags)")
-                self._apply_base_chrome_config(chrome_options, hidden)
+            self._apply_base_chrome_config(chrome_options, hidden)
+            # Loại bỏ --no-sandbox để tránh cảnh báo và tăng ổn định
+            try:
+                self._remove_unsafe_sandbox_flag(chrome_options)
+            except Exception:
+                pass
             # Ensure extensions are allowed so profile title extension can run
             try:
                 self._ensure_extensions_allowed(chrome_options)
@@ -561,21 +2110,255 @@ class ChromeProfileManager:
                         pass
             except Exception as e:
                 print(f"⚠️ [LAUNCH] Could not isolate extensions: {e}")
-
+            
             # Launch Chrome with fallback mechanism
+            self._append_app_log(profile_path, "Launching Chrome with configured options")
             driver = self._launch_chrome_with_fallback(chrome_options, profile_path, hidden)
             
             if not driver:
+                self._append_app_log(profile_path, "Chrome failed to start")
                 return False, "Chrome không thể khởi động"
             
-            # Handle login logic
-            self._handle_auto_login(driver, profile_path, auto_login, login_data, start_url)
+            # Áp dụng stealth để giảm bị phát hiện bot
+            try:
+                self._apply_stealth_driver(driver, lang, profile_path)
+                # Áp dụng antidetect settings từ profile
+                self._apply_stealth_evasion(driver, profile_path)
+                # Đồng bộ UA/Accept-Language qua CDP để thống nhất mọi request
+                if ua:
+                    try:
+                        driver.execute_cdp_cmd('Network.enable', {})
+                        driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                            'userAgent': ua,
+                            'acceptLanguage': lang or 'en-US'
+                        })
+                    except Exception as _cdp:
+                        print(f"⚠️ [LAUNCH] Không set UA qua CDP: {_cdp}")
+                # Chặn tạm thời truy cập *.google.* trong giai đoạn warmup để tránh gọi nền
+                try:
+                    driver.execute_cdp_cmd('Network.enable', {})
+                    driver.execute_cdp_cmd('Network.setBlockedURLs', { 'urls': [
+                        '*://*.google.com/*',
+                        '*://*.gstatic.com/*',
+                        '*://clientservices.googleapis.com/*',
+                        '*://clients4.google.com/*',
+                        '*://clients6.google.com/*',
+                        '*://safebrowsing.googleapis.com/*',
+                        '*://play.googleapis.com/*',
+                        '*://firebaseinstallations.googleapis.com/*',
+                        '*://fcm.googleapis.com/*',
+                        '*://gcm.googleapis.com/*',
+                        '*://mtalk.google.com/*',
+                        '*://www.google.com/gen_204*',
+                        '*://ssl.gstatic.com/gb/*',
+                        '*://clients*.google.com/*',
+                        '*://clients*.googleusercontent.com/*',
+                        '*://www.google.com/sorry/*'
+                    ] })
+                except Exception:
+                    pass
+                # Warm-up delay để tránh rate-limit/captcha ngay sau khởi động
+                try:
+                    delay_ms = random.randint(7000, 12000)
+                    print(f"⏳ [WARMUP] Chờ {delay_ms}ms trước khi thao tác tìm kiếm...")
+                    self._append_app_log(profile_path, f"Warmup delay: {delay_ms}ms")
+                    time.sleep(delay_ms/1000.0)
+                except Exception:
+                    pass
+                # Gỡ chặn sau warmup, giữ chặn GCM/invalidations endpoints + beacon bot
+                try:
+                    driver.execute_cdp_cmd('Network.setBlockedURLs', { 'urls': [
+                        '*://clientservices.googleapis.com/*',
+                        '*://clients4.google.com/*',
+                        '*://clients6.google.com/*',
+                        '*://safebrowsing.googleapis.com/*',
+                        '*://firebaseinstallations.googleapis.com/*',
+                        '*://fcm.googleapis.com/*',
+                        '*://gcm.googleapis.com/*',
+                        '*://mtalk.google.com/*',
+                        '*://www.google.com/gen_204*',
+                        '*://ssl.gstatic.com/gb/*',
+                        '*://clients*.google.com/*',
+                        '*://clients*.googleusercontent.com/*',
+                        '*://www.google.com/sorry/*'
+                    ] })
+                except Exception:
+                    pass
+
+                # Vô hiệu client hints/UA-CH và thống nhất Accept-Language qua headers CDP
+                try:
+                    hdrs = {
+                        'Accept-Language': lang or 'en-US,en;q=0.9',
+                        'Sec-CH-UA-Platform': None,
+                        'Sec-CH-UA-Platform-Version': None,
+                        'Sec-CH-UA': None,
+                        'Sec-CH-UA-Arch': None,
+                        'Sec-CH-UA-Bitness': None,
+                        'Sec-CH-UA-Full-Version-List': None,
+                        'Sec-CH-UA-Model': None
+                    }
+                    driver.execute_cdp_cmd('Network.setExtraHTTPHeaders', { 'headers': {k:v for k,v in hdrs.items() if v is not None} })
+                except Exception:
+                    pass
+            except Exception as _se:
+                print(f"⚠️ [STEALTH] Không thể áp dụng stealth: {_se}")
+
+            # Handle login logic và Startup URL từ cấu hình nếu có
+            # Ưu tiên: tham số start_url > software.startup_url
+            startup_url = start_url
+            if not startup_url:
+                su = (sw.get('startup_url') or '').strip()
+                if su:
+                    startup_url = su
+            # Tránh mở Google Search trực tiếp (dễ captcha). Nếu là URL tìm kiếm Google thì chuyển qua DuckDuckGo.
+            safe_start_url = startup_url
+            try:
+                if startup_url and 'google.com/search' in startup_url.lower():
+                    from urllib.parse import urlparse, parse_qs, urlencode
+                    parsed = urlparse(startup_url)
+                    q = parse_qs(parsed.query).get('q', [''])[0]
+                    if q:
+                        safe_start_url = f"https://duckduckgo.com/?{urlencode({'q': q})}"
+                    else:
+                        safe_start_url = "about:blank"
+            except Exception:
+                safe_start_url = startup_url or "about:blank"
+            self._handle_auto_login(driver, profile_path, auto_login, login_data, safe_start_url)
             
+            self._append_app_log(profile_path, "Chrome launched successfully")
             return True, driver
             
         except Exception as e:
             print(f"💥 [LAUNCH] Lỗi: {str(e)}")
+            try:
+                self._append_app_log(profile_path, f"Launch error: {str(e)}")
+            except Exception:
+                pass
             return False, f"Lỗi khi khởi động Chrome: {str(e)}"
+
+    def _apply_stealth_driver(self, driver, lang: str = 'en-US', profile_path: str = None):
+        """Tiêm các script stealth để giảm phát hiện tự động hóa.
+        - Ẩn navigator.webdriver
+        - Thêm navigator.plugins & navigator.languages
+        - Thêm window.chrome
+        - Bẻ permissions cho notifications (tránh lỗi ChromeDriver)
+        - Che một số fingerprint cơ bản: WebGL vendor/renderer, canvas noise nhẹ
+        """
+        try:
+            script = r"""
+Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+
+// window.chrome placeholder
+if (!window.chrome) {
+  Object.defineProperty(window, 'chrome', { value: { runtime: {} } });
+}
+
+// languages
+try {
+  Object.defineProperty(navigator, 'languages', { get: () => ['""" + (lang or 'en-US') + r"""', 'en'] });
+} catch(e) {}
+
+// plugins
+try {
+  Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });
+} catch(e) {}
+
+// permissions
+const origQuery = window.navigator.permissions && window.navigator.permissions.query;
+if (origQuery) {
+  window.navigator.permissions.query = (parameters) => (
+    parameters && parameters.name === 'notifications' ?
+      Promise.resolve({ state: Notification.permission }) : origQuery(parameters)
+  );
+}
+
+// WebGL vendor/renderer spoof
+try {
+  const getParameter = WebGLRenderingContext.prototype.getParameter;
+  WebGLRenderingContext.prototype.getParameter = function(parameter){
+    if (parameter === 37445) return 'Google Inc.'; // UNMASKED_VENDOR_WEBGL
+    if (parameter === 37446) return 'ANGLE (Intel(R) HD Graphics)'; // UNMASKED_RENDERER_WEBGL
+    return getParameter.apply(this, arguments);
+  };
+} catch(e) {}
+
+// Canvas noise nhẹ
+try {
+  const toDataURL = HTMLCanvasElement.prototype.toDataURL;
+  HTMLCanvasElement.prototype.toDataURL = function(){
+    const ctx = this.getContext('2d');
+    if (ctx) {
+      const w = Math.min(10, this.width||0), h = Math.min(10, this.height||0);
+      if (w && h) {
+        const imgData = ctx.getImageData(0,0,w,h);
+        for (let i=0; i<imgData.data.length; i+=7) imgData.data[i] ^= 0x11;
+        ctx.putImageData(imgData,0,0);
+      }
+    }
+    return toDataURL.apply(this, arguments);
+  };
+} catch(e) {}
+            """
+            driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', { 'source': script })
+        except Exception as e:
+            print(f"⚠️ [STEALTH] Lỗi khi addScriptOnNewDocument: {e}")
+
+        # Inject randomized hardware fingerprints (WebGL vendor/renderer, CPU cores, deviceMemory)
+        try:
+            hw = {}
+            if profile_path:
+                try:
+                    import json as _json
+                    with open(os.path.join(profile_path, 'profile_settings.json'), 'r', encoding='utf-8') as sf:
+                        ps = _json.load(sf)
+                        hw = (ps.get('hardware') or {})
+                except Exception:
+                    hw = {}
+
+            import random as _rand
+            cpu_cores = int(str(hw.get('cpu_cores') or 0) or 0) or _rand.choice([4, 6, 8, 12])
+            device_memory = int(str(hw.get('device_memory') or 0) or 0) or _rand.choice([8, 16, 32])
+            webgl_vendor = (hw.get('webgl_vendor') or '').strip()
+            webgl_renderer = (hw.get('webgl_renderer') or '').strip()
+            if not webgl_vendor or not webgl_renderer:
+                pairs = [
+                    ("Google Inc. (NVIDIA)", "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+                    ("Google Inc. (Intel)", "ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+                    ("Google Inc. (AMD)", "ANGLE (AMD, AMD Radeon RX 6600 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+                ]
+                webgl_vendor, webgl_renderer = _rand.choice(pairs)
+
+            hw_script = f"""
+            try {{
+              Object.defineProperty(navigator, 'hardwareConcurrency', {{ get: () => {cpu_cores} }});
+            }} catch(e) {{}}
+            try {{
+              Object.defineProperty(navigator, 'deviceMemory', {{ get: () => {device_memory} }});
+            }} catch(e) {{}}
+            try {{
+              const getParameterProxy = WebGLRenderingContext.prototype.getParameter;
+              WebGLRenderingContext.prototype.getParameter = function(parameter) {{
+                const UNMASKED_VENDOR_WEBGL = 0x9245; // ext.UNMASKED_VENDOR_WEBGL
+                const UNMASKED_RENDERER_WEBGL = 0x9246; // ext.UNMASKED_RENDERER_WEBGL
+                if (parameter === UNMASKED_VENDOR_WEBGL) return '{webgl_vendor}';
+                if (parameter === UNMASKED_RENDERER_WEBGL) return '{webgl_renderer}';
+                return getParameterProxy.apply(this, [parameter]);
+              }};
+              if (window.WebGL2RenderingContext && WebGL2RenderingContext.prototype.getParameter) {{
+                const getParameterProxy2 = WebGL2RenderingContext.prototype.getParameter;
+                WebGL2RenderingContext.prototype.getParameter = function(parameter) {{
+                  const UNMASKED_VENDOR_WEBGL = 0x9245;
+                  const UNMASKED_RENDERER_WEBGL = 0x9246;
+                  if (parameter === UNMASKED_VENDOR_WEBGL) return '{webgl_vendor}';
+                  if (parameter === UNMASKED_RENDERER_WEBGL) return '{webgl_renderer}';
+                  return getParameterProxy2.apply(this, [parameter]);
+                }};
+              }}
+            }} catch(e) {{}}
+            """
+            driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', { 'source': hw_script })
+        except Exception as e:
+            print(f"⚠️ [STEALTH] Lỗi khi inject hardware spoof: {e}")
 
     def _ensure_extensions_allowed(self, chrome_options: "Options") -> None:
         """Remove flags that disable extensions and add enable flag.
@@ -649,25 +2432,96 @@ class ChromeProfileManager:
 
             # content script with inlined profile name
             js_path = os.path.join(assets_dir, "profile_title.js")
+            # Sử dụng tên profile thực tế
+            display_name = profile_name
+            
             script = (
                 "(function(){\n"
                 "  const profileName = " + _json.dumps(str(profile_name)) + ";\n"
-                "  try {\n"
-                "    const apply = () => {\n"
-                "      const t = document.title || '';}\n"
-                "    ;\n"
-                "  } catch(e) {}\n"
-                "  const prefix = profileName + ' | ';\n"
-                "  const set = () => {\n"
+                "  const displayName = " + _json.dumps(display_name) + ";\n"
+                "  const prefix = '[' + displayName + '] ';\n"
+                "  \n"
+                "  // Function to update title\n"
+                "  const updateTitle = () => {\n"
                 "    try {\n"
-                "      if (!document.title.startsWith(prefix)) {\n"
-                "        document.title = prefix + document.title;\n"
+                "      const currentTitle = document.title || '';\n"
+                "      if (!currentTitle.startsWith(prefix)) {\n"
+                "        document.title = prefix + currentTitle;\n"
                 "      }\n"
                 "    } catch(e) {}\n"
                 "  };\n"
-                "  set();\n"
-                "  const obs = new MutationObserver(set);\n"
-                "  try { obs.observe(document.querySelector('title') || document.documentElement, {subtree:true, childList:true, characterData:true}); } catch(e) {}\n"
+                "  \n"
+                "  // Function to update Google search bar\n"
+                "  const updateGoogleSearch = () => {\n"
+                "    try {\n"
+                "      const searchInputs = document.querySelectorAll('input[name=\"q\"], input[aria-label*=\"Search\"], input[placeholder*=\"Search\"], input[placeholder*=\"Tìm\"]');\n"
+                "      searchInputs.forEach(input => {\n"
+                "        if (input.placeholder && !input.placeholder.includes(displayName)) {\n"
+                "          input.placeholder = displayName + ' | ' + input.placeholder;\n"
+                "        }\n"
+                "      });\n"
+                "    } catch(e) {}\n"
+                "  };\n"
+                "  \n"
+                "  // Function to add profile indicator to page\n"
+                "  const addProfileIndicator = () => {\n"
+                "    try {\n"
+                "      // Remove existing indicator\n"
+                "      const existing = document.getElementById('gpm-profile-indicator');\n"
+                "      if (existing) existing.remove();\n"
+                "      \n"
+                "      // Create new indicator\n"
+                "      const indicator = document.createElement('div');\n"
+                "      indicator.id = 'gpm-profile-indicator';\n"
+                "      indicator.style.cssText = 'position:fixed;top:20px;right:20px;background:linear-gradient(45deg, #4285f4, #34a853);color:white;padding:8px 15px;border-radius:8px;font-family:Arial,sans-serif;font-size:14px;font-weight:bold;z-index:999999;box-shadow:0 4px 12px rgba(0,0,0,0.3);border:2px solid #fff;';\n"
+                "      indicator.textContent = '🔧 ' + displayName;\n"
+                "      document.body.appendChild(indicator);\n"
+                "      \n"
+                "      // Add animation\n"
+                "      indicator.style.animation = 'slideIn 0.5s ease-out';\n"
+                "      const style = document.createElement('style');\n"
+                "      style.textContent = '@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }';\n"
+                "      document.head.appendChild(style);\n"
+                "    } catch(e) {}\n"
+                "  };\n"
+                "  \n"
+                "  // Function to update page content\n"
+                "  const updatePageContent = () => {\n"
+                "    updateTitle();\n"
+                "    updateGoogleSearch();\n"
+                "    addProfileIndicator();\n"
+                "  };\n"
+                "  \n"
+                "  // Initial setup\n"
+                "  updatePageContent();\n"
+                "  \n"
+                "  // Wait for page load then update\n"
+                "  if (document.readyState === 'loading') {\n"
+                "    document.addEventListener('DOMContentLoaded', () => {\n"
+                "      setTimeout(updatePageContent, 500);\n"
+                "      setTimeout(updatePageContent, 2000);\n"
+                "    });\n"
+                "  } else {\n"
+                "    setTimeout(updatePageContent, 500);\n"
+                "    setTimeout(updatePageContent, 2000);\n"
+                "  }\n"
+                "  \n"
+                "  // Monitor all changes\n"
+                "  const observer = new MutationObserver(() => {\n"
+                "    setTimeout(updatePageContent, 100);\n"
+                "  });\n"
+                "  \n"
+                "  try {\n"
+                "    observer.observe(document.documentElement, {childList:true, subtree:true, characterData:true});\n"
+                "  } catch(e) {}\n"
+                "  \n"
+                "  // Also monitor window events\n"
+                "  window.addEventListener('load', () => {\n"
+                "    setTimeout(updatePageContent, 1000);\n"
+                "  });\n"
+                "  \n"
+                "  // Periodic update every 5 seconds\n"
+                "  setInterval(updatePageContent, 5000);\n"
                 "})();\n"
             )
             with open(js_path, "w", encoding="utf-8") as f:
@@ -677,22 +2531,254 @@ class ChromeProfileManager:
         except Exception as e:
             print(f"⚠️ [PROFILE-TITLE] Failed to create extension: {e}")
             return ext_dir
+
+    def _remove_unsafe_sandbox_flag(self, chrome_options: "Options") -> None:
+        """Loại bỏ cờ --no-sandbox khỏi danh sách arguments nếu có."""
+        try:
+            args_attr = None
+            if hasattr(chrome_options, 'arguments'):
+                args_attr = 'arguments'
+            elif hasattr(chrome_options, '_arguments'):
+                args_attr = '_arguments'
+            if not args_attr:
+                return
+            args = getattr(chrome_options, args_attr, []) or []
+            filtered = [a for a in list(args) if a.strip().lower() != '--no-sandbox']
+            setattr(chrome_options, args_attr, filtered)
+        except Exception:
+            pass
+    
+    def diagnose_profile(self, profile_name: str, test_query: str = "tiktok", warmup_seconds: int = 8):
+        """Chẩn đoán profile: thu thập log trình duyệt, kiểm tra IPv4/IPv6, thử truy cập Google.
+        Tạo báo cáo JSON tại ./diagnostics/<profile>_<timestamp>.json
+        """
+        try:
+            os.makedirs("diagnostics", exist_ok=True)
+            profile_name = str(profile_name)
+            profile_path = os.path.join(self.profiles_dir, profile_name)
+            if not os.path.exists(profile_path):
+                return False, f"Profile '{profile_name}' không tồn tại"
+
+            # Kill chrome trước khi chẩn đoán
+            try:
+                self._kill_chrome_processes()
+            except Exception:
+                pass
+
+            chrome_options = Options()
+            chrome_options.add_argument(f"--user-data-dir={profile_path}")
+            chrome_options.add_argument("--no-first-run")
+            chrome_options.add_argument("--no-default-browser-check")
+            chrome_options.add_argument("--disable-ipv6")
+            chrome_options.add_argument("--disable-quic")
+            chrome_options.add_argument("--disable-dns-prefetch")
+            chrome_options.add_argument("--no-pings")
+            chrome_options.add_argument("--disable-notifications")
+            chrome_options.add_argument("--disable-features=UseGCMChannel,PushMessaging,NotificationTriggers,UseDnsHttpsSvcb")
+            # Bật logging
+            try:
+                chrome_options.set_capability('goog:loggingPrefs', { 'performance': 'ALL', 'browser': 'ALL' })
+            except Exception:
+                pass
+
+            driver = self._launch_chrome_with_fallback(chrome_options, profile_path, hidden=True)
+            if not driver:
+                return False, "Chrome không thể khởi động (diagnostics)"
+
+            report = {
+                'profile': profile_name,
+                'started_at': datetime.utcnow().isoformat() + 'Z',
+                'ipv4': None,
+                'ipv6': None,
+                'google_search_url': None,
+                'google_sorry_detected': False,
+                'browser_log_counts': {},
+                'gcm_indicators': {
+                    'deprecated_endpoint': 0,
+                    'quota_exceeded': 0
+                }
+            }
+
+            # IPv4/IPv6 leak checks
+            def _fetch_text(url: str, timeout_sec: int = 12):
+                try:
+                    driver.get(url)
+                    time.sleep(0.6)
+                    return (driver.find_element('tag name', 'body').text or '').strip()
+                except Exception:
+                    return None
+
+            report['ipv4'] = _fetch_text('https://ipv4.icanhazip.com')
+            report['ipv6'] = _fetch_text('https://ipv6.icanhazip.com')
+
+            # Warmup
+            try:
+                time.sleep(max(0, int(warmup_seconds)))
+            except Exception:
+                pass
+
+            # Probe Google
+            try:
+                from urllib.parse import urlencode
+                q = urlencode({'q': test_query})
+                url = f"https://www.google.com/search?{q}"
+                driver.get(url)
+                time.sleep(1.5)
+                cur = driver.current_url
+                report['google_search_url'] = cur
+                if 'google.com/sorry/' in (cur or '').lower():
+                    report['google_sorry_detected'] = True
+            except Exception:
+                pass
+
+            # Collect logs
+            def _safe_get_log(kind: str):
+                try:
+                    return driver.get_log(kind)
+                except Exception:
+                    return []
+
+            browser_logs = _safe_get_log('browser')
+            perf_logs = _safe_get_log('performance')
+            report['browser_log_counts'] = {
+                'browser': len(browser_logs),
+                'performance': len(perf_logs)
+            }
+            # Scan quick indicators
+            def _scan(lines):
+                dep = 0
+                quota = 0
+                for it in lines:
+                    try:
+                        msg = it.get('message') or it.get('text') or ''
+                    except Exception:
+                        msg = str(it)
+                    ml = (msg or '').lower()
+                    if 'deprecated_endpoint' in ml:
+                        dep += 1
+                    if 'quota_exceeded' in ml:
+                        quota += 1
+                return dep, quota
+            d1, q1 = _scan(browser_logs)
+            d2, q2 = _scan(perf_logs)
+            report['gcm_indicators']['deprecated_endpoint'] = d1 + d2
+            report['gcm_indicators']['quota_exceeded'] = q1 + q2
+
+            # Persist report
+            ts = datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+            out_path = os.path.join('diagnostics', f"{profile_name}_{ts}.json")
+            try:
+                with open(out_path, 'w', encoding='utf-8') as f:
+                    json.dump(report, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                print(f"⚠️ [DIAG] Không thể lưu báo cáo: {e}")
+
+            try:
+                driver.quit()
+            except Exception:
+                pass
+
+            return True, out_path
+        except Exception as e:
+            return False, f"Lỗi chẩn đoán: {e}"
+
+    def prune_profile_to_gpm_baseline(self, profile_name: str):
+        """Xoá file/thư mục thừa để tối ưu profile giống baseline của GPM.
+        Giữ lại các marker quan trọng và cấu hình cần thiết.
+        """
+        try:
+            profile_name = str(profile_name)
+            profile_path = os.path.join(self.profiles_dir, profile_name)
+            if not os.path.exists(profile_path):
+                return False, f"Profile '{profile_name}' không tồn tại"
+
+            # Danh sách file cần giữ (nếu tồn tại)
+            keep_files = {
+                os.path.join(profile_path, 'Local State'),
+                os.path.join(profile_path, 'First Run'),
+                os.path.join(profile_path, 'Last Version'),
+                os.path.join(profile_path, 'Last Browser'),
+                os.path.join(profile_path, 'Variations'),
+                os.path.join(profile_path, 'first_party_sets.db'),
+                os.path.join(profile_path, 'first_party_sets.db-journal'),
+            }
+            # Thư mục cần giữ
+            keep_dirs = {
+                os.path.join(profile_path, 'Default'),
+                os.path.join(profile_path, 'GPMSoft'),
+                os.path.join(profile_path, 'GPMBrowserExtenions'),
+                os.path.join(profile_path, 'Safe Browsing'),
+                os.path.join(profile_path, 'SSLErrorAssistant'),
+            }
+            # Các thư mục rác/cached nên xoá nếu có
+            remove_dirs = [
+                'Accounts','AmountExtractionHeuristicRegexes','AutofillStates','AutofillStrikeDatabase','blob_storage',
+                'BrowserMetrics','BudgetDatabase','CertificateRevocation','chrome_cart_db','ClientCertificates',
+                'Collaboration','commerce_subscription_db','component_crx_cache','Crashpad','DataSharing',
+                'DawnGraphiteCache','DawnWebGPUCache','Discount Service','DNR Extension Rules','Download Service',
+                'Extension Rules','Extension Scripts','Extension State','Extensions','Feature Engagement Tracker',
+                'GraphiteDawnCache','GrShaderCache','GCM Store','IndexedDB','JumpListIconsMostVisited',
+                'JumpListIconsRecentClosed','Local Extension Settings','Local Storage','MediaFoundationWidevineCdm',
+                'Network','optimization_guide_hint_cache_store','OptimizationHints','OriginTrials','parcel_tracking_db',
+                'PersistentOriginTrials','Platform Notifications','Policy','PrivacySandboxAttestationsPreloaded',
+                'ProbabilisticRevealTokenRegistry','Search Logos','segmentation_platform','Segmentation Platform',
+                'Service Worker','Session Storage','Sessions','ShaderCache','shared_proto_db','Shared Dictionary',
+                'Site Characteristics Database','Storage','Subresource Filter','Sync Data','Sync Extension Settings',
+                'TrustTokenKeyCommitments','VideoDecodeStats','WasmTtsEngine','Web Applications','WebStorage',
+                'webrtc_event_logs','ZxcvbnData'
+            ]
+            # Các file rác nên xoá nếu có
+            remove_files = [
+                'chrome_debug.log','DevToolsActivePort','CrashpadMetrics-active.pma','LOG','LOG.old',
+                'Network Action Predictor','Network Action Predictor-journal','Top Sites','Top Sites-journal',
+                'History','History-journal','Favicons','Favicons-journal','Shortcuts','Shortcuts-journal',
+                'Google Profile.ico','Google Profile Picture.png','DownloadMetadata','passkey_enclave_state',
+                'Login Data','Login Data-journal','Login Data For Account','Login Data For Account-journal',
+                'Account Web Data','Account Web Data-journal','BrowsingTopicsState','BrowsingTopicsState-journal',
+                'BrowsingTopicsSiteData','BrowsingTopicsSiteData-journal','DIPS','DIPS-journal','trusted_vault.pb'
+            ]
+
+            # Xoá thư mục rác
+            for d in remove_dirs:
+                p = os.path.join(profile_path, d)
+                if os.path.isdir(p) and p not in keep_dirs:
+                    try:
+                        shutil.rmtree(p, ignore_errors=True)
+                        # print(f"🧹 Removed dir: {p}")
+                    except Exception:
+                        pass
+
+            # Xoá file rác
+            for f in remove_files:
+                p = os.path.join(profile_path, f)
+                if os.path.exists(p) and p not in keep_files:
+                    try:
+                        os.remove(p)
+                        # print(f"🧹 Removed file: {p}")
+                    except Exception:
+                        pass
+
+            # Không tạo thêm cấu trúc GPM phụ để giữ tối giản như GPM (chỉ Default/)
+
+            return True, f"Đã tối ưu profile '{profile_name}' về baseline GPM"
+        except Exception as e:
+            return False, f"Lỗi khi tối ưu profile: {e}"
     
     def _perform_auto_login(self, driver, login_data, start_url=None):
         """Thực hiện đăng nhập tự động cho nhiều trang web"""
         try:
             print(f"🔐 [LOGIN] Bắt đầu auto-login process...")
             
-            # Kiểm tra xem có phải TikTok format không
+            # Kiểm tra xem có phải string format không (TikTok/Standard)
             if isinstance(login_data, str):
-                print(f"📝 [LOGIN] Parse TikTok format string...")
-                # Parse TikTok format
+                print(f"📝 [LOGIN] Parse string format (username|password)...")
+                # Parse TikTok/Standard format
                 parsed_data = self._parse_tiktok_account_data(login_data)
                 if parsed_data:
                     login_data = parsed_data
-                    print(f"✅ [LOGIN] Đã parse TikTok format: {login_data.get('username', 'N/A')}")
+                    print(f"✅ [LOGIN] Đã parse format: {login_data.get('username', 'N/A')}")
                 else:
-                    print(f"❌ [LOGIN] Không thể parse TikTok format")
+                    print(f"❌ [LOGIN] Không thể parse string format")
                     return False
             
             # Thử load session data trước
@@ -720,12 +2806,13 @@ class ChromeProfileManager:
                 login_url = login_data.get('login_url', 'https://www.tiktok.com/login/phone-or-email/email')
                 print(f"🌐 [LOGIN] Sử dụng login_url: {login_url}")
             
-            email = login_data.get('email', '')
+            username = login_data.get('username', '')
+            email = login_data.get('email', username)  # Sử dụng username làm email nếu không có email
             password = login_data.get('password', '')
             twofa = login_data.get('twofa', '')
             
+            print(f"👤 [LOGIN] Username: {username}")
             print(f"📧 [LOGIN] Email: {email}")
-            print(f"👤 [LOGIN] Username: {login_data.get('username', 'N/A')}")
             print(f"🔑 [LOGIN] Password: {'*' * len(password) if password else 'N/A'}")
             print(f"🔐 [LOGIN] 2FA: {twofa if twofa else 'N/A'}")
             print(f"🌐 [LOGIN] Đang thực hiện đăng nhập tại: {login_url}")
@@ -758,12 +2845,14 @@ class ChromeProfileManager:
                 login_success = self._login_generic(driver, email, password, twofa)
             
             if login_success:
-                print(f"🎉 [LOGIN] Đăng nhập thành công cho: {email}")
+                print(f"🎉 [LOGIN] Đăng nhập thành công cho: {username}")
                 # Lưu session data sau khi đăng nhập thành công
                 self._save_session_data(driver, login_data)
+                # Lưu vào Chrome profile để tự động đăng nhập lần sau
+                self._save_to_chrome_profile(driver, login_data)
                 return True
             else:
-                print(f"💥 [LOGIN] Đăng nhập thất bại cho: {email}")
+                print(f"💥 [LOGIN] Đăng nhập thất bại cho: {username}")
                 return False
             
         except Exception as e:
@@ -1383,6 +3472,25 @@ class ChromeProfileManager:
             time.sleep(3)
             current_url = driver.current_url
             print(f"🌐 [TIKTOK] URL sau khi đăng nhập: {current_url}")
+
+            # Nhận diện thông báo 'Maximum number of attempts reached' và các biến thể
+            try:
+                error_texts = []
+                candidates = driver.find_elements("css selector", "div, span, p, h1, h2")
+                for el in candidates[:200]:
+                    try:
+                        txt = (el.text or "").strip()
+                        if txt:
+                            error_texts.append(txt)
+                    except Exception:
+                        pass
+                joined = "\n".join(error_texts).lower()
+                if ("maximum number of attempts reached" in joined) or ("too many attempts" in joined) or ("try again later" in joined):
+                    print("⛔ [TIKTOK] Phát hiện giới hạn số lần thử đăng nhập: Maximum number of attempts reached / Too many attempts / Try again later")
+                    # Trả về False để caller có thể thực hiện backoff/đổi IP/proxy và thử lại sau
+                    return False
+            except Exception as _e:
+                print(f"⚠️ [TIKTOK] Lỗi khi dò thông báo lỗi: {_e}")
             
             if 'login' not in current_url.lower() and 'signin' not in current_url.lower():
                 print(f"✅ [TIKTOK] Đăng nhập TikTok thành công cho {login_field_value}")
@@ -1983,6 +4091,85 @@ class ChromeProfileManager:
             pass
         
         return None
+    
+    def ultimate_auto_2fa_handler(self, email, password=None, refresh_token=None, client_id="9e5f94bc-e8a4-4e73-b8be-63364c29d753"):
+        """Ultimate Auto 2FA Handler - Xử lý tự động hoàn toàn"""
+        print(f"🚀 [ULTIMATE] Bắt đầu xử lý tự động TikTok 2FA cho: {email}")
+        print(f"⏰ [ULTIMATE] Thời gian bắt đầu: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("=" * 60)
+        
+        # Thử các phương pháp theo thứ tự ưu tiên
+        methods = []
+        
+        # Method 1: Refresh token (nếu có)
+        if refresh_token and refresh_token != 'ep':
+            methods.append(('refresh_token', refresh_token, client_id))
+        
+        # Method 2: Device login (luôn có thể thử)
+        if client_id:
+            methods.append(('device_login', None, client_id))
+        
+        # Method 3: IMAP (nếu có password)
+        if password and password != 'ep':
+            methods.append(('imap', password, None))
+        
+        for method_name, method_data, client_id in methods:
+            try:
+                print(f"🔄 [ULTIMATE] Thử phương pháp: {method_name}")
+                
+                if method_name == 'refresh_token':
+                    success, result = self._try_refresh_token_method(method_data, client_id, email)
+                elif method_name == 'device_login':
+                    success, result = self._try_device_login_method(client_id, email)
+                elif method_name == 'imap':
+                    success, result = self._try_imap_method(email, method_data)
+                
+                if success:
+                    print(f"🎉 [ULTIMATE] THÀNH CÔNG! Mã TikTok: {result}")
+                    return True, result
+                
+            except Exception as e:
+                print(f"⚠️ [ULTIMATE] Lỗi phương pháp {method_name}: {e}")
+                continue
+        
+        print("❌ [ULTIMATE] Tất cả phương pháp đều thất bại")
+        return False, "Tất cả phương pháp đều thất bại"
+    
+    def continuous_monitor_2fa(self, email, password=None, refresh_token=None, client_id="9e5f94bc-e8a4-4e73-b8be-63364c29d753", duration=300, interval=30):
+        """Continuous Monitor 2FA - Monitor liên tục"""
+        print(f"🔍 [MONITOR] Bắt đầu monitor TikTok 2FA cho: {email}")
+        print(f"⏰ [MONITOR] Thời gian monitor: {duration} giây")
+        print(f"🔄 [MONITOR] Khoảng thời gian kiểm tra: {interval} giây")
+        print(f"⏰ [MONITOR] Thời gian bắt đầu: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        found_codes = set()
+        start_time = time.time()
+        
+        while time.time() - start_time < duration:
+            try:
+                print(f"🔍 [MONITOR] Kiểm tra mã mới... {datetime.now().strftime('%H:%M:%S')}")
+                
+                # Thử lấy mã
+                success, result = self.ultimate_auto_2fa_handler(email, password, refresh_token, client_id)
+                
+                if success and result not in found_codes:
+                    found_codes.add(result)
+                    print(f"🎉 [MONITOR] Tìm thấy mã TikTok mới: {result}")
+                    print(f"⏰ [MONITOR] Thời gian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                    return True, result
+                
+                print("⏳ [MONITOR] Chưa có mã mới")
+                time.sleep(interval)
+                
+            except KeyboardInterrupt:
+                print("⏹️ [MONITOR] Dừng monitor...")
+                break
+            except Exception as e:
+                print(f"❌ [MONITOR] Lỗi monitor: {e}")
+                time.sleep(interval)
+        
+        print("⏰ [MONITOR] Kết thúc monitor")
+        return False, "Monitor timeout"
 
     def test_graph_mail_fetch(self, account_line: str):
         """Test fetching TikTok verification code using a single account line.
@@ -1997,19 +4184,29 @@ class ChromeProfileManager:
             if not parsed:
                 return False, "Không parse được dữ liệu tài khoản. Kiểm tra định dạng."
 
-            code = self._fetch_tiktok_code_from_hotmail(parsed)
-            if code:
-                return True, f"Lấy mã thành công: {code}"
-            return False, "Không tìm thấy email chứa mã 2FA trong thời gian chờ."
+            # Sử dụng ultimate handler
+            email = parsed.get('email', '')
+            password = parsed.get('email_password', '')
+            refresh_token = parsed.get('ms_refresh_token', '')
+            client_id = parsed.get('ms_client_id', '9e5f94bc-e8a4-4e73-b8be-63364c29d753')
+            
+            success, result = self.ultimate_auto_2fa_handler(email, password, refresh_token, client_id)
+            
+            if success:
+                return True, f"Lấy mã thành công: {result}"
+            else:
+                return False, f"Không tìm thấy mã 2FA: {result}"
+                
         except Exception as e:
             return False, f"Lỗi test Graph: {str(e)}"
     
     def _parse_tiktok_account_data(self, account_string):
-        """Parse TikTok account data from string format"""
+        """Parse TikTok account data from string format - hỗ trợ username|password"""
         try:
             # Supported formats:
-            # 1) username|password|email|email_password|session_token|user_id
-            # 2) username|password|hotmail_email|hotmail_password|ms_refresh_token|ms_client_id
+            # 1) username|password (Standard format - đơn giản)
+            # 2) username|password|email|email_password|session_token|user_id (TikTok Format)
+            # 3) username|password|hotmail_email|hotmail_password|ms_refresh_token|ms_client_id (Microsoft Format)
             if '|' in account_string:
                 parts = account_string.split('|')
                 if len(parts) >= 6 and '@' in parts[2] and '-' in parts[5]:
@@ -2045,6 +4242,16 @@ class ChromeProfileManager:
                         'email_password': email_password,
                         'session_token': session_token,
                         'user_id': user_id,
+                        'twofa': ''
+                    }
+                elif len(parts) >= 2:
+                    # Format đơn giản: username|password (Standard format)
+                    username = parts[0].strip()
+                    password = parts[1].strip()
+                    return {
+                        'username': username,
+                        'password': password,
+                        'email': username,  # Sử dụng username làm email
                         'twofa': ''
                     }
             
@@ -2629,7 +4836,7 @@ class ChromeProfileManager:
                     item_path = os.path.join(self.profiles_dir, item)
                     if os.path.isdir(item_path):
                         profiles.append(item)
-                        
+                
                 print(f"📋 [PROFILES] Found {len(profiles)} profiles: {profiles}")
             except Exception as e:
                 print(f"⚠️ [PROFILES] Lỗi khi đọc profiles: {e}")
@@ -2934,6 +5141,9 @@ class ChromeProfileManager:
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
+        # Giảm fingerprint WebRTC/IP
+        chrome_options.add_argument("--force-webrtc-ip-handling-policy=default_public_interface_only")
+        chrome_options.add_argument("--enable-features=WebRtcHideLocalIpsWithMdns")
         
         # Disable automation detection
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -3192,35 +5402,144 @@ class ChromeProfileManager:
                 print(f"✅ [LOGIN] Profile already logged in, loading cookies...")
                 cookies_loaded = self._load_cookies_from_profile(profile_path, driver)
                 if cookies_loaded:
-                    driver.get("https://www.tiktok.com/foryou")
+                    # Navigate to TikTok to verify login
+                    if start_url:
+                        driver.get(start_url)
+                    else:
+                        driver.get("https://www.tiktok.com/foryou")
                     time.sleep(3)
-                    return True
+                    
+                    # Verify if still logged in
+                    if self._verify_tiktok_login(driver):
+                        print(f"🎉 [LOGIN] Successfully restored session from cookies!")
+                        return True
+                    else:
+                        print(f"⚠️ [LOGIN] Cookies expired, performing fresh login...")
+                        # Remove expired marker
+                        try:
+                            os.remove(marker_file)
+                        except:
+                            pass
                 else:
                     print(f"⚠️ [LOGIN] Failed to load cookies, performing auto-login...")
             
             # Perform auto-login if requested
             if auto_login and login_data:
-                print(f"🔐 [LOGIN] Starting auto-login...")
-                if start_url:
-                    driver.get(start_url)
-                    time.sleep(2)
-                else:
-                    driver.get(login_data.get('login_url', 'https://www.tiktok.com/login'))
-                    time.sleep(2)
-                
-                login_success = self._perform_auto_login(driver, login_data, start_url)
-                if login_success:
-                    print(f"✅ [LOGIN] Auto-login successful")
-                    return True
-                else:
-                    print(f"❌ [LOGIN] Auto-login failed")
-                    return False
-            else:
-                print(f"ℹ️ [LOGIN] No auto-login requested")
+                if login_data:
+                    print(f"🔐 [LOGIN] Starting auto-login with provided data...")
+                    if start_url:
+                        driver.get(start_url)
+                        time.sleep(2)
+                    else:
+                        driver.get(login_data.get('login_url', 'https://www.tiktok.com/login'))
+                        time.sleep(2)
+                    
+                    login_success = self._perform_auto_login(driver, login_data, start_url)
+                    if login_success:
+                        print(f"✅ [LOGIN] Auto-login successful")
+                        return True
+                    else:
+                        print(f"❌ [LOGIN] Auto-login failed")
+                        return False
+            # If not performing auto-login, stay silent (no extra logs)
                 return True
                 
         except Exception as e:
             print(f"❌ [LOGIN] Login handling failed: {str(e)}")
+            return False
+
+    def _verify_tiktok_login(self, driver):
+        """Verify if user is logged in to TikTok"""
+        try:
+            current_url = driver.current_url.lower()
+            print(f"🔍 [VERIFY] Checking TikTok login status at: {current_url}")
+            
+            # Check if we're on TikTok domain
+            if 'tiktok.com' not in current_url:
+                print(f"⚠️ [VERIFY] Not on TikTok domain")
+                return False
+            
+            # Check for login indicators
+            try:
+                # Look for user avatar or profile elements
+                avatar_selectors = [
+                    '[data-e2e="nav-avatar"]',
+                    '[data-e2e="user-avatar"]',
+                    '.avatar',
+                    '[class*="avatar"]',
+                    '[class*="user"]'
+                ]
+                
+                for selector in avatar_selectors:
+                    try:
+                        element = driver.find_element("css selector", selector)
+                        if element and element.is_displayed():
+                            print(f"✅ [VERIFY] Found user avatar element: {selector}")
+                            return True
+                    except:
+                        continue
+                
+                # Check for login button (if present, means not logged in)
+                login_selectors = [
+                    '[data-e2e="top-login-button"]',
+                    'a[href*="/login"]',
+                    'button[data-e2e*="login"]'
+                ]
+                
+                for selector in login_selectors:
+                    try:
+                        element = driver.find_element("css selector", selector)
+                        if element and element.is_displayed():
+                            print(f"❌ [VERIFY] Found login button, not logged in")
+                            return False
+                    except:
+                        continue
+                
+                # Check page source for login indicators
+                page_source = driver.page_source.lower()
+                if 'login' in page_source and 'sign up' in page_source:
+                    print(f"❌ [VERIFY] Login page detected in source")
+                    return False
+                
+                # If we reach here and no login elements found, assume logged in
+                print(f"✅ [VERIFY] No login elements found, assuming logged in")
+                return True
+                
+            except Exception as e:
+                print(f"⚠️ [VERIFY] Error checking login status: {e}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ [VERIFY] Error verifying TikTok login: {e}")
+            return False
+
+    def is_profile_logged_in(self, profile_name):
+        """Check if profile is logged in to TikTok"""
+        try:
+            profile_path = os.path.join(self.profiles_dir, profile_name)
+            marker_file = os.path.join(profile_path, 'tiktok_logged_in.txt')
+            
+            if os.path.exists(marker_file):
+                # Check if marker file is recent (within 7 days)
+                try:
+                    with open(marker_file, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        if 'timestamp=' in content:
+                            import re
+                            timestamp_match = re.search(r'timestamp=(\d+\.?\d*)', content)
+                            if timestamp_match:
+                                timestamp = float(timestamp_match.group(1))
+                                current_time = time.time()
+                                # Check if marker is less than 7 days old
+                                if current_time - timestamp < 7 * 24 * 3600:
+                                    return True
+                except:
+                    pass
+            
+            return False
+            
+        except Exception as e:
+            print(f"❌ [CHECK] Error checking login status for {profile_name}: {e}")
             return False
 
     def install_extension_for_profile(self, profile_name, extension_id="pfnededegaaopdmhkdmcofjmoldfiped"):
@@ -5628,9 +7947,22 @@ chrome.runtime.onInstalled.addListener(() => {
             print(f"✅ [ACTIVATE-EXTENSION] Extension is installed, launching Chrome...")
             
             # Launch Chrome with the profile
+            # Lấy display name từ settings
+            display_name = profile_name
+            try:
+                settings_path = os.path.join(profile_path, 'profile_settings.json')
+                if os.path.exists(settings_path):
+                    import json
+                    with open(settings_path, 'r', encoding='utf-8') as f:
+                        settings = json.load(f)
+                        profile_info = settings.get('profile_info', {})
+                        display_name = profile_info.get('display_name', profile_name)
+            except Exception:
+                pass
+                
             chrome_options = [
                 "--user-data-dir=" + profile_path,
-                "--profile-directory=" + profile_name,
+                "--profile-directory=" + display_name,
                 "--load-extension=" + os.path.join(profile_path, "Extensions", extension_id, "3.4.1"),
                 "--enable-extensions",
                 "--disable-extensions-except=" + os.path.join(profile_path, "Extensions", extension_id, "3.4.1"),
@@ -6436,4 +8768,244 @@ chrome.runtime.onInstalled.addListener(() => {
                 success_count += 1
         
         return results, success_count
+    
+    def ultimate_auto_2fa_handler(self, email, password=None, refresh_token=None, client_id="9e5f94bc-e8a4-4e73-b8be-63364c29d753"):
+        """Ultimate Auto 2FA Handler - Xử lý tự động hoàn toàn"""
+        print(f"🚀 [ULTIMATE] Bắt đầu xử lý tự động TikTok 2FA cho: {email}")
+        print(f"⏰ [ULTIMATE] Thời gian bắt đầu: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("=" * 60)
+        
+        # Thử các phương pháp theo thứ tự ưu tiên
+        methods = []
+        
+        # Method 1: Refresh token (nếu có)
+        if refresh_token and refresh_token != 'ep':
+            methods.append(('refresh_token', refresh_token, client_id))
+        
+        # Method 2: Device login (luôn có thể thử)
+        if client_id:
+            methods.append(('device_login', None, client_id))
+        
+        # Method 3: IMAP (nếu có password)
+        if password and password != 'ep':
+            methods.append(('imap', password, None))
+        
+        for method_name, method_data, client_id in methods:
+            try:
+                print(f"🔄 [ULTIMATE] Thử phương pháp: {method_name}")
+                
+                if method_name == 'refresh_token':
+                    success, result = self._try_refresh_token_method(method_data, client_id, email)
+                elif method_name == 'device_login':
+                    success, result = self._try_device_login_method(client_id, email)
+                elif method_name == 'imap':
+                    success, result = self._try_imap_method(email, method_data)
+                
+                if success:
+                    print(f"🎉 [ULTIMATE] THÀNH CÔNG! Mã TikTok: {result}")
+                    return True, result
+                
+            except Exception as e:
+                print(f"⚠️ [ULTIMATE] Lỗi phương pháp {method_name}: {e}")
+                continue
+        
+        print("❌ [ULTIMATE] Tất cả phương pháp đều thất bại")
+        return False, "Tất cả phương pháp đều thất bại"
+    
+    def continuous_monitor_2fa(self, email, password=None, refresh_token=None, client_id="9e5f94bc-e8a4-4e73-b8be-63364c29d753", duration=300, interval=30):
+        """Continuous Monitor 2FA - Monitor liên tục"""
+        print(f"🔍 [MONITOR] Bắt đầu monitor TikTok 2FA cho: {email}")
+        print(f"⏰ [MONITOR] Thời gian monitor: {duration} giây")
+        print(f"🔄 [MONITOR] Khoảng thời gian kiểm tra: {interval} giây")
+        print(f"⏰ [MONITOR] Thời gian bắt đầu: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        found_codes = set()
+        start_time = time.time()
+        
+        while time.time() - start_time < duration:
+            try:
+                print(f"🔍 [MONITOR] Kiểm tra mã mới... {datetime.now().strftime('%H:%M:%S')}")
+                
+                # Thử lấy mã
+                success, result = self.ultimate_auto_2fa_handler(email, password, refresh_token, client_id)
+                
+                if success and result not in found_codes:
+                    found_codes.add(result)
+                    print(f"🎉 [MONITOR] Tìm thấy mã TikTok mới: {result}")
+                    print(f"⏰ [MONITOR] Thời gian: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                    return True, result
+                
+                print("⏳ [MONITOR] Chưa có mã mới")
+                time.sleep(interval)
+                
+            except KeyboardInterrupt:
+                print("⏹️ [MONITOR] Dừng monitor...")
+                break
+            except Exception as e:
+                print(f"❌ [MONITOR] Lỗi monitor: {e}")
+                time.sleep(interval)
+        
+        print("⏰ [MONITOR] Kết thúc monitor")
+        return False, "Monitor timeout"
+
+    def change_tiktok_password(self, profile_name, old_password, new_password):
+        """Đổi mật khẩu TikTok cho profile"""
+        try:
+            print(f"🔐 [CHANGE-PASSWORD] Đổi mật khẩu TikTok cho {profile_name}")
+            
+            # Lấy thông tin session hiện tại
+            success, session_data = self.load_tiktok_session(profile_name)
+            if not success:
+                return False, "Không thể load session data"
+            
+            # Lấy thông tin đăng nhập
+            email = session_data.get('email', '')
+            if not email:
+                return False, "Không tìm thấy email trong session"
+            
+            # Launch Chrome profile
+            driver = self.launch_chrome_profile(profile_name, hidden=False, auto_login=False)
+            if not driver:
+                return False, "Không thể launch Chrome profile"
+            
+            try:
+                # Đi đến trang TikTok
+                driver.get("https://www.tiktok.com/setting/account/password")
+                time.sleep(3)
+                
+                # Kiểm tra xem đã đăng nhập chưa
+                if "login" in driver.current_url.lower():
+                    return False, "Profile chưa đăng nhập TikTok"
+                
+                # Tìm và điền mật khẩu cũ
+                old_pwd_input = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.NAME, "oldPassword"))
+                )
+                old_pwd_input.clear()
+                old_pwd_input.send_keys(old_password)
+                
+                # Tìm và điền mật khẩu mới
+                new_pwd_input = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.NAME, "newPassword"))
+                )
+                new_pwd_input.clear()
+                new_pwd_input.send_keys(new_password)
+                
+                # Tìm và điền xác nhận mật khẩu mới
+                confirm_pwd_input = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.NAME, "confirmPassword"))
+                )
+                confirm_pwd_input.clear()
+                confirm_pwd_input.send_keys(new_password)
+                
+                # Tìm và click nút Submit
+                submit_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']"))
+                )
+                submit_button.click()
+                
+                # Chờ kết quả
+                time.sleep(5)
+                
+                # Kiểm tra kết quả
+                if "success" in driver.current_url.lower() or "password" not in driver.current_url.lower():
+                    # Cập nhật session data với mật khẩu mới
+                    session_data['password'] = new_password
+                    session_data['updated_at'] = datetime.now().isoformat()
+                    
+                    # Lưu session data mới
+                    self.save_tiktok_session(profile_name, session_data)
+                    
+                    return True, "Đổi mật khẩu thành công!"
+                else:
+                    return False, "Đổi mật khẩu thất bại. Vui lòng kiểm tra mật khẩu cũ."
+                    
+            except Exception as e:
+                return False, f"Lỗi khi đổi mật khẩu: {str(e)}"
+            finally:
+                driver.quit()
+                
+        except Exception as e:
+            return False, f"Lỗi hệ thống: {str(e)}"
+
+    def get_microsoft_mx_and_emails(self, profile_name, microsoft_email, microsoft_password):
+        """Lấy MX từ Microsoft và lấy mail đổi password"""
+        try:
+            print(f"📧 [MICROSOFT-MX] Lấy MX từ Microsoft cho {profile_name}")
+            
+            # Lấy thông tin session hiện tại
+            success, session_data = self.load_tiktok_session(profile_name)
+            if not success:
+                return False, "Không thể load session data"
+            
+            # Sử dụng Microsoft Graph API để lấy emails
+            import requests
+            import json
+            
+            # Microsoft Graph API endpoint
+            graph_url = "https://graph.microsoft.com/v1.0/me/messages"
+            
+            # Headers cho Microsoft Graph API
+            headers = {
+                'Authorization': f'Bearer {self._get_microsoft_token(microsoft_email, microsoft_password)}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Lấy emails liên quan đến TikTok
+            params = {
+                '$filter': "contains(subject,'TikTok') or contains(subject,'verification') or contains(subject,'code')",
+                '$orderby': 'receivedDateTime desc',
+                '$top': 10
+            }
+            
+            response = requests.get(graph_url, headers=headers, params=params)
+            
+            if response.status_code == 200:
+                emails = response.json().get('value', [])
+                
+                # Lưu emails vào session data
+                session_data['microsoft_emails'] = emails
+                session_data['microsoft_email'] = microsoft_email
+                session_data['updated_at'] = datetime.now().isoformat()
+                
+                # Lưu session data
+                self.save_tiktok_session(profile_name, session_data)
+                
+                return True, f"Đã lấy được {len(emails)} emails từ Microsoft"
+            else:
+                return False, f"Lỗi khi lấy emails: {response.status_code} - {response.text}"
+                
+        except Exception as e:
+            return False, f"Lỗi hệ thống: {str(e)}"
+
+    def _get_microsoft_token(self, email, password):
+        """Lấy Microsoft Graph API token"""
+        try:
+            import requests
+            
+            # Microsoft OAuth2 endpoint
+            token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+            
+            # Client ID cho Microsoft Graph API
+            client_id = "9e5f94bc-e8a4-4e73-b8be-63364c29d753"
+            
+            # Data cho OAuth2
+            data = {
+                'client_id': client_id,
+                'scope': 'https://graph.microsoft.com/.default',
+                'grant_type': 'password',
+                'username': email,
+                'password': password
+            }
+            
+            response = requests.post(token_url, data=data)
+            
+            if response.status_code == 200:
+                token_data = response.json()
+                return token_data.get('access_token')
+            else:
+                raise Exception(f"Lỗi lấy token: {response.status_code} - {response.text}")
+                
+        except Exception as e:
+            raise Exception(f"Lỗi lấy Microsoft token: {str(e)}")
     
