@@ -1,0 +1,354 @@
+"""
+GPM Login Flags Configuration
+Tích hợp các flags và cấu hình từ GPM Login để chống autobot detection
+"""
+
+import os
+import json
+import random
+from typing import Dict, List, Any
+
+class GPMFlagsConfig:
+    def __init__(self, config_file: str = "gpm_config.json"):
+        self.config_file = config_file
+        self.config = self._load_config()
+    
+    def _load_config(self) -> Dict[str, Any]:
+        """Load cấu hình từ file JSON"""
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"⚠️ [GPM-CONFIG] Lỗi load config: {e}")
+        
+        # Default config nếu không load được
+        return self._get_default_config()
+    
+    def _get_default_config(self) -> Dict[str, Any]:
+        """Cấu hình mặc định giống GPM Login"""
+        return {
+            "gpm_flags": {
+                "disable_machine_id": True,
+                "use_pref_tracking_config_before_v137": True,
+                "disable_automation_detection": True,
+                "hide_webdriver_property": True,
+                "spoof_user_agent": True,
+                "randomize_canvas_fingerprint": True,
+                "randomize_webgl_fingerprint": True,
+                "randomize_audio_context": True,
+                "randomize_client_rects": True,
+                "disable_webrtc_leak": True,
+                "randomize_hardware_concurrency": True,
+                "randomize_device_memory": True,
+                "randomize_screen_resolution": True,
+                "randomize_timezone": True,
+                "randomize_language": True,
+                "randomize_platform": True
+            },
+            "chrome_flags": [
+                "--gpm-disable-machine-id",
+                "--gpm-use-pref-tracking-config-before-v137",
+                "--disable-blink-features=AutomationControlled",
+                "--disable-features=VizDisplayCompositor",
+                "--disable-features=TranslateUI",
+                "--disable-ipc-flooding-protection",
+                "--disable-renderer-backgrounding",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-sync-preferences",
+                "--disable-default-apps",
+                "--disable-hang-monitor",
+                "--disable-prompt-on-repost",
+                "--disable-features=BlinkGenPropertyTrees",
+                "--disable-features=UserAgentClientHint",
+                "--disable-features=WebRtcHideLocalIpsWithMdns",
+                "--force-webrtc-ip-handling-policy=default_public_interface_only",
+                "--disable-background-networking",
+                "--disable-background-sync",
+                "--disable-background-timer-throttling",
+                "--disable-client-side-phishing-detection",
+                "--disable-component-extensions-with-background-pages",
+                "--disable-component-update",
+                "--disable-device-discovery-notifications",
+                "--disable-dns-prefetch",
+                "--disable-domain-reliability",
+                "--disable-ipv6",
+                "--disable-notifications",
+                "--disable-permissions-api",
+                "--disable-popup-blocking",
+                "--disable-quic",
+                "--disable-sync",
+                "--disable-usb",
+                "--disable-usb-device-detection",
+                "--disable-usb-keyboard-detect",
+                "--disable-usb-mouse-detect",
+                "--enable-features=WebRtcHideLocalIpsWithMdns",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--no-pings",
+                "--no-service-autorun",
+                "--password-store=basic",
+                "--safebrowsing-disable-auto-update"
+            ],
+            "fingerprint_data": {
+                "canvas_noise_range": {
+                    "min": -4.5505962821424921,
+                    "max": 5.0,
+                    "step": 0.004
+                },
+                "webgl_noise_range": {
+                    "min": 0.27021524160784449,
+                    "max": 0.799,
+                    "step": 0.003
+                },
+                "audio_noise_range": {
+                    "min": 0.50578112194118141,
+                    "max": 1.99,
+                    "step": 0.01
+                },
+                "client_rect_noise_range": {
+                    "min": 0.52366375281646094,
+                    "max": 1.99,
+                    "step": 0.01
+                }
+            }
+        }
+    
+    def get_chrome_flags(self) -> List[str]:
+        """Lấy danh sách Chrome flags từ config"""
+        return self.config.get("chrome_flags", [])
+    
+    def get_gpm_flags(self) -> Dict[str, bool]:
+        """Lấy GPM flags từ config"""
+        return self.config.get("gpm_flags", {})
+    
+    def get_fingerprint_data(self) -> Dict[str, Any]:
+        """Lấy dữ liệu fingerprint từ config"""
+        return self.config.get("fingerprint_data", {})
+    
+    def generate_canvas_noise(self) -> float:
+        """Tạo noise cho Canvas fingerprint giống GPM"""
+        try:
+            canvas_range = self.get_fingerprint_data().get("canvas_noise_range", {})
+            min_val = canvas_range.get("min", -4.55)
+            max_val = canvas_range.get("max", 5.0)
+            step = canvas_range.get("step", 0.004)
+            
+            # Tạo noise trong khoảng với step
+            steps = int((max_val - min_val) / step)
+            random_step = random.randint(0, steps)
+            return min_val + (random_step * step)
+        except Exception:
+            return random.uniform(-4.55, 5.0)
+    
+    def generate_webgl_noise(self) -> float:
+        """Tạo noise cho WebGL fingerprint giống GPM"""
+        try:
+            webgl_range = self.get_fingerprint_data().get("webgl_noise_range", {})
+            min_val = webgl_range.get("min", 0.27)
+            max_val = webgl_range.get("max", 0.799)
+            step = webgl_range.get("step", 0.003)
+            
+            steps = int((max_val - min_val) / step)
+            random_step = random.randint(0, steps)
+            return min_val + (random_step * step)
+        except Exception:
+            return random.uniform(0.27, 0.799)
+    
+    def generate_audio_noise(self) -> float:
+        """Tạo noise cho Audio Context fingerprint giống GPM"""
+        try:
+            audio_range = self.get_fingerprint_data().get("audio_noise_range", {})
+            min_val = audio_range.get("min", 0.505)
+            max_val = audio_range.get("max", 1.99)
+            step = audio_range.get("step", 0.01)
+            
+            steps = int((max_val - min_val) / step)
+            random_step = random.randint(0, steps)
+            return min_val + (random_step * step)
+        except Exception:
+            return random.uniform(0.505, 1.99)
+    
+    def generate_client_rect_noise(self) -> float:
+        """Tạo noise cho Client Rect fingerprint giống GPM"""
+        try:
+            rect_range = self.get_fingerprint_data().get("client_rect_noise_range", {})
+            min_val = rect_range.get("min", 0.523)
+            max_val = rect_range.get("max", 1.99)
+            step = rect_range.get("step", 0.01)
+            
+            steps = int((max_val - min_val) / step)
+            random_step = random.randint(0, steps)
+            return min_val + (random_step * step)
+        except Exception:
+            return random.uniform(0.523, 1.99)
+    
+    def get_antidetect_script(self) -> str:
+        """Tạo script JavaScript để chống detection giống GPM"""
+        canvas_noise = self.generate_canvas_noise()
+        webgl_noise = self.generate_webgl_noise()
+        audio_noise = self.generate_audio_noise()
+        client_rect_noise = self.generate_client_rect_noise()
+        
+        return f"""
+        (function() {{
+            'use strict';
+            
+            // Hide webdriver property
+            Object.defineProperty(navigator, 'webdriver', {{
+                get: () => undefined,
+            }});
+            
+            // Remove automation indicators
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Promise;
+            delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
+            
+            // Spoof User-Agent
+            Object.defineProperty(navigator, 'userAgent', {{
+                get: () => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
+            }});
+            
+            // Spoof platform
+            Object.defineProperty(navigator, 'platform', {{
+                get: () => 'Win32',
+            }});
+            
+            // Spoof hardware concurrency
+            Object.defineProperty(navigator, 'hardwareConcurrency', {{
+                get: () => {random.choice([2, 4, 6, 8, 12])},
+            }});
+            
+            // Spoof device memory
+            Object.defineProperty(navigator, 'deviceMemory', {{
+                get: () => {random.choice([4, 8, 12, 16, 32])},
+            }});
+            
+            // Canvas fingerprint spoofing
+            const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+            HTMLCanvasElement.prototype.toDataURL = function(type, quality) {{
+                const result = originalToDataURL.apply(this, arguments);
+                if (type === 'image/png' || type === 'image/jpeg') {{
+                    // Add noise to canvas data
+                    return result + '{canvas_noise}';
+                }}
+                return result;
+            }};
+            
+            // WebGL fingerprint spoofing
+            const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(parameter) {{
+                if (parameter === 37445) {{ // UNMASKED_VENDOR_WEBGL
+                    return 'Google Inc. (NVIDIA)';
+                }}
+                if (parameter === 37446) {{ // UNMASKED_RENDERER_WEBGL
+                    return 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)';
+                }}
+                return originalGetParameter.apply(this, arguments);
+            }};
+            
+            // Audio Context fingerprint spoofing
+            const originalCreateAnalyser = AudioContext.prototype.createAnalyser;
+            AudioContext.prototype.createAnalyser = function() {{
+                const analyser = originalCreateAnalyser.apply(this, arguments);
+                const originalGetFloatFrequencyData = analyser.getFloatFrequencyData;
+                analyser.getFloatFrequencyData = function(array) {{
+                    originalGetFloatFrequencyData.apply(this, arguments);
+                    for (let i = 0; i < array.length; i++) {{
+                        array[i] += {audio_noise};
+                    }}
+                }};
+                return analyser;
+            }};
+            
+            // Client Rect fingerprint spoofing
+            const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+            Element.prototype.getBoundingClientRect = function() {{
+                const rect = originalGetBoundingClientRect.apply(this, arguments);
+                rect.left += {client_rect_noise};
+                rect.top += {client_rect_noise};
+                rect.right += {client_rect_noise};
+                rect.bottom += {client_rect_noise};
+                return rect;
+            }};
+            
+            // WebRTC leak protection
+            const originalCreateDataChannel = RTCPeerConnection.prototype.createDataChannel;
+            RTCPeerConnection.prototype.createDataChannel = function() {{
+                return null;
+            }};
+            
+            // Language spoofing
+            Object.defineProperty(navigator, 'language', {{
+                get: () => 'en-US',
+            }});
+            
+            Object.defineProperty(navigator, 'languages', {{
+                get: () => ['en-US', 'en'],
+            }});
+            
+            // Timezone spoofing
+            const originalGetTimezoneOffset = Date.prototype.getTimezoneOffset;
+            Date.prototype.getTimezoneOffset = function() {{
+                return 300; // EST timezone offset
+            }};
+            
+            // Screen resolution spoofing
+            Object.defineProperty(screen, 'width', {{
+                get: () => 1920,
+            }});
+            
+            Object.defineProperty(screen, 'height', {{
+                get: () => 1080,
+            }});
+            
+            Object.defineProperty(screen, 'availWidth', {{
+                get: () => 1920,
+            }});
+            
+            Object.defineProperty(screen, 'availHeight', {{
+                get: () => 1040,
+            }});
+            
+            console.log('GPM Anti-detection script loaded successfully');
+        }})();
+        """
+    
+    def apply_gpm_flags_to_chrome_options(self, chrome_options) -> None:
+        """Áp dụng GPM flags vào Chrome options"""
+        try:
+            # Thêm GPM-specific flags
+            gpm_flags = self.get_gpm_flags()
+            chrome_flags = self.get_chrome_flags()
+            
+            # Thêm các flags từ config
+            for flag in chrome_flags:
+                chrome_options.add_argument(flag)
+            
+            # Thêm experimental options
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
+            
+            # Thêm prefs để disable automation
+            prefs = {
+                "credentials_enable_service": False,
+                "password_manager_enabled": False,
+                "profile.default_content_setting_values.notifications": 2,
+                "profile.default_content_settings.popups": 0,
+                "profile.managed_default_content_settings.images": 1,
+                "webrtc.ip_handling_policy": "disable_non_proxied_udp",
+                "webrtc.multiple_routes": False,
+                "webrtc.multiple_routes_enabled": False,
+                "webrtc.non_proxied_udp": False,
+                "webrtc.nonproxied_udp_enabled": False
+            }
+            
+            chrome_options.add_experimental_option("prefs", prefs)
+            
+            print("✅ [GPM-FLAGS] Applied GPM Login flags successfully")
+            
+        except Exception as e:
+            print(f"⚠️ [GPM-FLAGS] Error applying GPM flags: {e}")
+
+# Global instance
+gpm_config = GPMFlagsConfig()
