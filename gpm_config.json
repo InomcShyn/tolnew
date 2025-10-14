@@ -1,0 +1,128 @@
+{
+  "gpm_profile_id": "P-799516-5028",
+  "file_cookie_save": "C:\\Users\\admin\\tolnew\\chrome_profiles\\P-799516-5028\\Default\\GPMBrowserExtensions\\cookies-ext\\gpm_restore_cookie.json",
+  "command": "command",
+  "url_server": "http://localhost:9996",
+  "websocket_server": "ws://localhost:9967",
+  "gpm_flags": {
+    "disable_machine_id": true,
+    "use_pref_tracking_config_before_v137": true,
+    "disable_automation_detection": true,
+    "hide_webdriver_property": true,
+    "spoof_user_agent": true,
+    "randomize_canvas_fingerprint": true,
+    "randomize_webgl_fingerprint": true,
+    "randomize_audio_context": true,
+    "randomize_client_rects": true,
+    "disable_webrtc_leak": true,
+    "randomize_hardware_concurrency": true,
+    "randomize_device_memory": true,
+    "randomize_screen_resolution": true,
+    "randomize_timezone": true,
+    "randomize_language": true,
+    "randomize_platform": true
+  },
+  "chrome_flags": [
+    "--gpm-disable-machine-id",
+    "--gpm-use-pref-tracking-config-before-v137",
+    "--no-default-browser-check",
+    "--password-store=basic",
+    "--flag-switches-begin",
+    "--flag-switches-end"
+  ],
+  "fingerprint_data": {
+    "canvas_noise_range": {
+      "min": -4.5505962821424921,
+      "max": 5.0,
+      "step": 0.004
+    },
+    "webgl_noise_range": {
+      "min": 0.27021524160784449,
+      "max": 0.799,
+      "step": 0.003
+    },
+    "audio_noise_range": {
+      "min": 0.50578112194118141,
+      "max": 1.99,
+      "step": 0.01
+    },
+    "client_rect_noise_range": {
+      "min": 0.52366375281646094,
+      "max": 1.99,
+      "step": 0.01
+    }
+  },
+  "extensions": {
+    "clipboard_ext": {
+      "name": "GPM Paste",
+      "version": "0.0.1",
+      "path": "extensions/clipboard-ext",
+      "permissions": [
+        "clipboardRead",
+        "contextMenus",
+        "<all_urls>",
+        "tabs"
+      ]
+    },
+    "cookies_ext": {
+      "name": "GPM Login",
+      "version": "1.4.0.0",
+      "path": "extensions/cookies-ext",
+      "permissions": [
+        "cookies",
+        "tabs",
+        "privacy",
+        "notifications",
+        "management",
+        "webNavigation",
+        "storage",
+        "webRequest",
+        "webRequestBlocking",
+        "contextMenus",
+        "processes",
+        "<all_urls>"
+      ]
+    }
+  },
+  "profile_settings": {
+    "antidetect": {
+      "enabled": true,
+      "hide_webdriver": true,
+      "spoof_plugins": true,
+      "spoof_languages": true,
+      "spoof_chrome": true,
+      "mask_webgl": true,
+      "canvas_noise": true,
+      "webrtc_protection": true,
+      "disable_blink_features": true,
+      "disable_automation": true
+    },
+    "hardware": {
+      "screen_resolution": "1920x1080",
+      "canvas_noise": "On",
+      "client_rect_noise": "On",
+      "webgl_image_noise": "On",
+      "audio_noise": "On",
+      "webgl_meta_masked": true,
+      "webgl_vendor": "Google Inc. (NVIDIA)",
+      "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "media_devices_masked": true,
+      "cpu_cores": "6",
+      "device_memory": "8",
+      "media_audio_inputs": "2",
+      "media_audio_outputs": "0",
+      "media_video_inputs": "0"
+    },
+    "software": {
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+      "browser_version": "139.0.7258.139",
+      "language": "en-US",
+      "locale": "en_US",
+      "timezone": "America/New_York",
+      "country": "US",
+      "startup_url": "",
+      "webrtc_policy": "default_public_interface_only",
+      "os_font": "Real"
+    }
+  }
+}
