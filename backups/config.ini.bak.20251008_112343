@@ -1,0 +1,21 @@
+[SETTINGS]
+auto_start = false
+hidden_mode = true
+max_profiles = 10
+startup_delay = 5
+
+[PROFILES]
+p-591938-5445 = C:\Users\admin\tolnew\chrome_profiles\P-591938-5445
+p-902871-6251 = C:\Users\admin\tolnew\chrome_profiles\P-902871-6251
+p-250095-1004 = C:\Users\admin\tolnew\chrome_profiles\P-250095-1004
+p-915971-1624 = C:\Users\admin\tolnew\chrome_profiles\P-915971-1624
+p-427358-4887 = C:\Users\admin\tolnew\chrome_profiles\P-427358-4887
+p-799516-5028 = C:\Users\admin\tolnew\chrome_profiles\P-799516-5028
+p-852782-8439 = C:\Users\admin\tolnew\chrome_profiles\P-852782-8439
+p-357265-8771 = C:\Users\admin\tolnew\chrome_profiles\P-357265-8771
+p-120088-9621 = C:\Users\admin\tolnew\chrome_profiles\P-120088-9621
+p-129648-0055 = C:\Users\admin\tolnew\chrome_profiles\P-129648-0055
+p-802231-0506 = C:\Users\admin\tolnew\chrome_profiles\P-802231-0506
+p-545941-2403 = C:\Users\admin\tolnew\chrome_profiles\P-545941-2403
+p-582349-5896 = C:\Users\admin\tolnew\chrome_profiles\P-582349-5896
+

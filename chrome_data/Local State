@@ -1,0 +1,21 @@
+{
+  "profile": {
+    "info_cache": {
+      "Template_1760349832": {
+        "name": "Template_1760349832",
+        "user_name": "",
+        "is_using_default_name": true,
+        "is_using_default_avatar": true,
+        "avatar_icon": "chrome://theme/IDR_PROFILE_AVATAR_12"
+      }
+    }
+  },
+  "browser": {
+    "enabled_labs_experiments": []
+  },
+  "google": {},
+  "gcm": {
+    "product_category_for_subtypes": "",
+    "wake_from_idle": false
+  }
+}
