@@ -3173,93 +3173,127 @@ class ChromeProfileManager:
 
             # Nếu mở hiển thị (Starting), KHÔNG dùng WebDriver để tránh ChromeDriver tự chèn --remote-debugging-port=0
             if hidden is False:
+                print(f"[DEBUG] [LAUNCH] Using native launch (visible mode) - keyboard-only autofill available")
                 try:
                     ok = self._launch_chrome_native_fixed(chrome_options, profile_path, start_url)
                     if ok:
                         # If native visible and auto_login requested, perform keystroke-based autofill
                         try:
                             if auto_login and login_data:
+                                print(f"[AUTOLOGIN] Native autofill requested - using keyboard-only method")
                                 import threading as _threading
                                 def _do_native_autofill():
                                     try:
                                         import time as _time
-                                        try:
-                                            import pyautogui as _pg
-                                        except Exception as _imp_err:
-                                            print(f"[AUTOLOGIN] pyautogui not available: {_imp_err}")
-                                            return
-                                        # Try to bring Chrome to front (best-effort)
-                                        try:
-                                            _pg.FAILSAFE = False
-                                            # Move mouse slightly to avoid corner failsafe
-                                            _pg.moveTo(400, 300, duration=0.05)
-                                            _time.sleep(0.1)
-                                        except Exception:
-                                            pass
-                                        # Give Chrome time to appear and load target page (start_url is passed in args)
-                                        _time.sleep(3)
-                                        # Wait a bit more for page content to become interactive
-                                        _time.sleep(2)
-                                        # Click page center to ensure focus inside webview
-                                        try:
-                                            screen_w, screen_h = _pg.size()
-                                            _pg.click(screen_w // 2, int(screen_h * 0.4))
-                                            _time.sleep(0.3)
-                                        except Exception:
-                                            pass
-                                        # Click directly on the email/username field area (approx coordinates)
-                                        try:
-                                            screen_w, screen_h = _pg.size()
-                                            # Click left side of the input to avoid right-side icons; move slightly lower
-                                            _pg.click(int(screen_w * 0.40), int(screen_h * 0.39))
-                                            _time.sleep(0.25)
-                                        except Exception:
-                                            pass
-                                        # Double-click to ensure caret inside the Email/username field
-                                        try:
-                                            _pg.doubleClick()
-                                            _time.sleep(0.15)
-                                        except Exception:
-                                            pass
-                                        username = login_data.get('username') or login_data.get('email')
-                                        password = login_data.get('password') or login_data.get('pass')
+                                        import pyautogui as _pg
+                                        
+                                        # Disable failsafe to prevent accidental stops
+                                        _pg.FAILSAFE = False
+                                        
+                                        # Wait for Chrome to load
+                                        _time.sleep(5)
+                                        
+                                        # Get login data
+                                        username = login_data.get('username', login_data.get('email', ''))
+                                        password = login_data.get('password', '')
+                                        
                                         if username and password:
+                                            print(f"[AUTOLOGIN] Starting keyboard-only autofill...")
+                                            
+                                            # Method 1: Use Tab navigation (no mouse movement)
                                             try:
-                                                # Heuristic: paste username, tab to password, paste password, submit
-                                                # Prefer typing directly to avoid clipboard/security blockers
-                                                try:
-                                                    _time.sleep(0.15)
-                                                    _pg.typewrite(str(username).strip(), interval=0.02)
-                                                except Exception:
-                                                    try:
-                                                        import pyperclip as _pc
-                                                        _pc.copy(str(username).strip())
-                                                        _pg.hotkey('ctrl','v')
-                                                    except Exception:
-                                                        pass
-                                                _time.sleep(0.25)
-                                                # Click directly on Password field to avoid landing on icon by Tab
-                                                try:
-                                                    screen_w, screen_h = _pg.size()
-                                                    # Click slightly lower on password input to avoid misalignment
-                                                    _pg.click(int(screen_w * 0.40), int(screen_h * 0.435))
-                                                    _time.sleep(0.2)
-                                                except Exception:
-                                                    pass
-                                                try:
-                                                    import pyperclip as _pc2
-                                                    _pc2.copy(str(password))
-                                                    _pg.hotkey('ctrl','v')
-                                                except Exception:
-                                                    _pg.typewrite(str(password), interval=0.02)
+                                                # First, press Tab a few times to skip logo/header elements
+                                                print(f"[AUTOLOGIN] Skipping logo/header elements...")
+                                                for i in range(3):
+                                                    _pg.press('tab')
+                                                    _time.sleep(0.3)
+                                                
+                                                # Press Tab to focus first field (email/username)
+                                                _pg.press('tab')
+                                                _time.sleep(0.5)
+                                                print(f"[AUTOLOGIN] Focused on username field")
+                                                
+                                                # Clear and type username
+                                                _pg.hotkey('ctrl', 'a')
                                                 _time.sleep(0.2)
+                                                _pg.typewrite(username, interval=0.05)
+                                                _time.sleep(0.5)
+                                                print(f"[AUTOLOGIN] Typed username")
+                                                
+                                                # Press Tab to go to password field
+                                                _pg.press('tab')
+                                                _time.sleep(0.5)
+                                                print(f"[AUTOLOGIN] Focused on password field")
+                                                
+                                                # Clear and type password
+                                                _pg.hotkey('ctrl', 'a')
+                                                _time.sleep(0.2)
+                                                _pg.typewrite(password, interval=0.05)
+                                                _time.sleep(0.5)
+                                                print(f"[AUTOLOGIN] Typed password")
+                                                
+                                                # Press Enter to submit
                                                 _pg.press('enter')
-                                                print("[AUTOLOGIN] Keystroke autofill submitted")
-                                            except Exception as _tf:
-                                                print(f"[AUTOLOGIN] Typing failed: {_tf}")
+                                                print(f"[AUTOLOGIN] Keyboard-only autofill completed")
+                                                
+                                                # Wait for captcha to appear (10-15 seconds)
+                                                print(f"[CAPTCHA] Waiting for captcha to appear...")
+                                                _time.sleep(12)  # Wait for captcha loading
+                                                
+                                                # Try to solve captcha automatically
+                                                try:
+                                                    print(f"[CAPTCHA] Attempting to solve captcha...")
+                                                    
+                                                    # Take screenshot to detect captcha
+                                                    import pyautogui as _pg2
+                                                    screenshot = _pg2.screenshot()
+                                                    
+                                                    # Try to find captcha elements using image recognition
+                                                    # This is a simple approach - you may need to enhance it
+                                                    print(f"[CAPTCHA] Looking for captcha elements...")
+                                                    
+                                                    # For now, just log that we're checking
+                                                    print(f"[CAPTCHA] Captcha detection skipped - manual solving required")
+                                                    
+                                                except Exception as captcha_err:
+                                                    print(f"[CAPTCHA] Auto-solve failed: {captcha_err}")
+                                                
+                                            except Exception as tab_err:
+                                                print(f"[AUTOLOGIN] Tab navigation failed: {tab_err}")
+                                                
+                                                # Method 2: Use Ctrl+V with clipboard (backup)
+                                                try:
+                                                    import pyperclip as _pc
+                                                    
+                                                    # Focus first field and paste username
+                                                    _pg.hotkey('ctrl', 'a')
+                                                    _pc.copy(username)
+                                                    _pg.hotkey('ctrl', 'v')
+                                                    _time.sleep(0.5)
+                                                    
+                                                    # Tab to password field
+                                                    _pg.press('tab')
+                                                    _time.sleep(0.5)
+                                                    
+                                                    # Paste password
+                                                    _pg.hotkey('ctrl', 'a')
+                                                    _pc.copy(password)
+                                                    _pg.hotkey('ctrl', 'v')
+                                                    _time.sleep(0.5)
+                                                    
+                                                    # Submit
+                                                    _pg.press('enter')
+                                                    print(f"[AUTOLOGIN] Clipboard autofill completed")
+                                                    
+                                                except Exception as clip_err:
+                                                    print(f"[AUTOLOGIN] Clipboard method failed: {clip_err}")
+                                        
                                     except Exception as _eaf:
-                                        print(f"[AUTOLOGIN] Error: {_eaf}")
+                                        print(f"[AUTOLOGIN] Native autofill error: {_eaf}")
+                                
                                 _threading.Thread(target=_do_native_autofill, daemon=True).start()
+                            else:
+                                print(f"[INFO] [LAUNCH] No autofill requested for native launch")
                         except Exception as _af_err:
                             print(f"[AUTOLOGIN] Could not start native autofill: {_af_err}")
                         return True, "Chrome started (native)"
@@ -3269,6 +3303,8 @@ class ChromeProfileManager:
                 except Exception as _ne:
                     print(f"[ERROR] [LAUNCH] Native start failed: {_ne}")
                     return False, "Native start exception (visible)."
+
+            print(f"[DEBUG] [LAUNCH] Using WebDriver launch (hidden mode) - autofill available")
 
             driver = self._launch_chrome_with_fallback(chrome_options, profile_path, hidden)
             
@@ -3550,6 +3586,8 @@ class ChromeProfileManager:
                         safe_start_url = "about:blank"
             except Exception:
                 safe_start_url = startup_url or "about:blank"
+            print(f"[DEBUG] [AUTOLOGIN] Calling _handle_auto_login...")
+            print(f"[DEBUG] [AUTOLOGIN] auto_login={auto_login}, login_data={bool(login_data)}")
             self._handle_auto_login(driver, profile_path, auto_login, login_data, safe_start_url)
             
             # Ghi fingerprint cơ bản ando app log to chẩn đoán
@@ -4804,6 +4842,13 @@ try {
             print(f"[INPUT] [TIKTOK] Giá trị cần fill: {login_field_value}")
             print(f"[PASSWORD] [TIKTOK] Password: {password[:5]}***")
             
+            # Ensure window is focused before finding elements
+            try:
+                driver.switch_to.window(driver.current_window_handle)
+                print("[SUCCESS] [FOCUS] Window focused before fill")
+            except Exception as focus_err:
+                print(f"[WARNING] [FOCUS] Could not focus: {focus_err}")
+            
             email_selectors = [
                 "input[data-e2e='login-username']",
                 "input[name='username']",
@@ -4831,32 +4876,96 @@ try {
                         driver.current_url  # Test session
                         
                         email_field = driver.find_element("css selector", selector)
-                        print(f"[DEBUG] [TIKTOK] Tìm found element with selector: {selector}")
-                        print(f"[VISIBLE] [TIKTOK] Element displayed: {email_field.is_displayed()}")
-                        print(f"[ENABLED] [TIKTOK] Element enabled: {email_field.is_enabled()}")
+                        print(f"[DEBUG] [TIKTOK] Tìm found email element with selector: {selector}")
+                        print(f"[VISIBLE] [TIKTOK] Email element displayed: {email_field.is_displayed()}")
+                        print(f"[ENABLED] [TIKTOK] Email element enabled: {email_field.is_enabled()}")
+                        print(f"[LOCATION] [TIKTOK] Email element location: {email_field.location}")
+                        print(f"[SIZE] [TIKTOK] Email element size: {email_field.size}")
                         
                         if email_field.is_displayed() and email_field.is_enabled():
-                            print(f"[SUCCESS] [TIKTOK] Element hợp lệ, start fill...")
+                            print(f"[SUCCESS] [TIKTOK] Email element hợp lệ, start fill...")
                             
-                            # Clear field
-                            print(f"[CLEANUP] [TIKTOK] Đang clear field...")
-                            email_field.clear()
-                            time.sleep(0.5)
-                            
-                            # Type value with JavaScript fallback
-                            print(f"⌨️ [TIKTOK] Đang gõ: {login_field_value}")
+                            # Wait for element to be interactable
                             try:
-                                email_field.send_keys(login_field_value)
-                                time.sleep(0.5)
-                            except Exception as e:
-                                print(f"[WARNING] [TIKTOK] Send keys thất bại, try JavaScript: {e}")
+                                from selenium.webdriver.support.ui import WebDriverWait
+                                from selenium.webdriver.support import expected_conditions as EC
+                                
+                                wait = WebDriverWait(driver, 5)
+                                wait.until(EC.element_to_be_clickable(email_field))
+                                print(f"[SUCCESS] [TIKTOK] Element is clickable")
+                            except Exception as wait_err:
+                                print(f"[WARNING] [TIKTOK] Wait failed: {wait_err}")
+                            
+                            # Fill value using JavaScript with detailed logging - NO mouse movement
+                            try:
+                                print(f"⌨️ [TIKTOK] Đang fill value bằng JavaScript (không di chuyển chuột)")
+                                print(f"[DEBUG] [TIKTOK] Target value: '{login_field_value}'")
+                                print(f"[DEBUG] [TIKTOK] Element tag: {email_field.tag_name}")
+                                print(f"[DEBUG] [TIKTOK] Element type: {email_field.get_attribute('type')}")
+                                print(f"[DEBUG] [TIKTOK] Element placeholder: {email_field.get_attribute('placeholder')}")
+                                
+                                # Check initial value
+                                initial_value = email_field.get_attribute('value')
+                                print(f"[DEBUG] [TIKTOK] Initial field value: '{initial_value}'")
+                                
+                                # Method 1: Direct value setting with events
+                                print(f"[STEP 1] [TIKTOK] Clearing field...")
+                                driver.execute_script("arguments[0].value = '';", email_field)  # Clear
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 2] [TIKTOK] Setting value...")
+                                driver.execute_script(f"arguments[0].value = '{login_field_value}';", email_field)  # Fill
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 3] [TIKTOK] Triggering input event...")
+                                driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", email_field)
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 4] [TIKTOK] Triggering change event...")
+                                driver.execute_script("arguments[0].dispatchEvent(new Event('change', { bubbles: true }));", email_field)
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 5] [TIKTOK] Triggering blur event...")
+                                driver.execute_script("arguments[0].dispatchEvent(new Event('blur', { bubbles: true }));", email_field)
+                                time.sleep(0.2)
+                                
+                                # Check value after Method 1
+                                value_after_method1 = email_field.get_attribute('value')
+                                print(f"[DEBUG] [TIKTOK] Value after Method 1: '{value_after_method1}'")
+                                
+                                # Method 2: Focus and set value (backup)
+                                print(f"[STEP 6] [TIKTOK] Method 2: Focus element...")
+                                driver.execute_script("arguments[0].focus();", email_field)
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 7] [TIKTOK] Method 2: Select all text...")
+                                driver.execute_script("arguments[0].select();", email_field)
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 8] [TIKTOK] Method 2: Set value again...")
+                                driver.execute_script(f"arguments[0].value = '{login_field_value}';", email_field)
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 9] [TIKTOK] Method 2: Trigger input event...")
+                                driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", email_field)
+                                time.sleep(0.2)
+                                
+                                # Final check
+                                final_value = email_field.get_attribute('value')
+                                print(f"[DEBUG] [TIKTOK] Final field value: '{final_value}'")
+                                print(f"[SUCCESS] [TIKTOK] Done fill value - NO mouse movement")
+                            except Exception as js_err:
+                                print(f"[ERROR] [TIKTOK] JavaScript fill failed: {js_err}")
+                                # Fallback: Try Selenium send_keys without clicking
                                 try:
-                                    driver.execute_script(f"arguments[0].value = '{login_field_value}';", email_field)
-                                    driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", email_field)
-                                    time.sleep(0.5)
-                                    print(f"[SUCCESS] [TIKTOK] Done fill bằng JavaScript")
-                                except Exception as js_error:
-                                    print(f"[ERROR] [TIKTOK] JavaScript cũng thất bại: {js_error}")
+                                    print(f"🔄 [TIKTOK] Fallback: Using Selenium send_keys")
+                                    driver.execute_script("arguments[0].focus();", email_field)
+                                    driver.execute_script("arguments[0].select();", email_field)
+                                    email_field.send_keys(login_field_value)
+                                    time.sleep(0.3)
+                                    print(f"[SUCCESS] [TIKTOK] Fallback send_keys successful")
+                                except Exception as fallback_err:
+                                    print(f"[ERROR] [TIKTOK] Fallback also failed: {fallback_err}")
                                     continue
                             
                             # Verify done fill
@@ -4935,29 +5044,93 @@ try {
                         print(f"[DEBUG] [TIKTOK] Tìm found password element with selector: {selector}")
                         print(f"[VISIBLE] [TIKTOK] Password element displayed: {password_field.is_displayed()}")
                         print(f"[ENABLED] [TIKTOK] Password element enabled: {password_field.is_enabled()}")
+                        print(f"[LOCATION] [TIKTOK] Password element location: {password_field.location}")
+                        print(f"[SIZE] [TIKTOK] Password element size: {password_field.size}")
                         
                         if password_field.is_displayed() and password_field.is_enabled():
                             print(f"[SUCCESS] [TIKTOK] Password element hợp lệ, start fill...")
                             
-                            # Clear field
-                            print(f"[CLEANUP] [TIKTOK] Đang clear password field...")
-                            password_field.clear()
-                            time.sleep(0.5)
-                            
-                            # Type password with JavaScript fallback
-                            print(f"⌨️ [TIKTOK] Đang gõ password: {password[:5]}***")
+                            # Wait for element to be interactable
                             try:
-                                password_field.send_keys(password)
-                                time.sleep(0.5)
-                            except Exception as e:
-                                print(f"[WARNING] [TIKTOK] Send keys password thất bại, try JavaScript: {e}")
+                                from selenium.webdriver.support.ui import WebDriverWait
+                                from selenium.webdriver.support import expected_conditions as EC
+                                
+                                wait = WebDriverWait(driver, 5)
+                                wait.until(EC.element_to_be_clickable(password_field))
+                                print(f"[SUCCESS] [TIKTOK] Password field is clickable")
+                            except Exception as wait_err:
+                                print(f"[WARNING] [TIKTOK] Wait failed: {wait_err}")
+                            
+                            # Fill password using JavaScript with detailed logging - NO mouse movement
+                            try:
+                                print(f"⌨️ [TIKTOK] Đang fill password bằng JavaScript (không di chuyển chuột)")
+                                print(f"[DEBUG] [TIKTOK] Target password: '{password[:3]}***'")
+                                print(f"[DEBUG] [TIKTOK] Element tag: {password_field.tag_name}")
+                                print(f"[DEBUG] [TIKTOK] Element type: {password_field.get_attribute('type')}")
+                                print(f"[DEBUG] [TIKTOK] Element placeholder: {password_field.get_attribute('placeholder')}")
+                                
+                                # Check initial value
+                                initial_value = password_field.get_attribute('value')
+                                print(f"[DEBUG] [TIKTOK] Initial password value: '{initial_value}'")
+                                
+                                # Method 1: Direct value setting with events
+                                print(f"[STEP 1] [TIKTOK] Clearing password field...")
+                                driver.execute_script("arguments[0].value = '';", password_field)  # Clear
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 2] [TIKTOK] Setting password value...")
+                                driver.execute_script(f"arguments[0].value = '{password}';", password_field)  # Fill
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 3] [TIKTOK] Triggering input event...")
+                                driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", password_field)
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 4] [TIKTOK] Triggering change event...")
+                                driver.execute_script("arguments[0].dispatchEvent(new Event('change', { bubbles: true }));", password_field)
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 5] [TIKTOK] Triggering blur event...")
+                                driver.execute_script("arguments[0].dispatchEvent(new Event('blur', { bubbles: true }));", password_field)
+                                time.sleep(0.2)
+                                
+                                # Check value after Method 1
+                                value_after_method1 = password_field.get_attribute('value')
+                                print(f"[DEBUG] [TIKTOK] Password value after Method 1: '{value_after_method1}'")
+                                
+                                # Method 2: Focus and set value (backup)
+                                print(f"[STEP 6] [TIKTOK] Method 2: Focus password element...")
+                                driver.execute_script("arguments[0].focus();", password_field)
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 7] [TIKTOK] Method 2: Select all text...")
+                                driver.execute_script("arguments[0].select();", password_field)
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 8] [TIKTOK] Method 2: Set password value again...")
+                                driver.execute_script(f"arguments[0].value = '{password}';", password_field)
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 9] [TIKTOK] Method 2: Trigger input event...")
+                                driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", password_field)
+                                time.sleep(0.2)
+                                
+                                # Final check
+                                final_value = password_field.get_attribute('value')
+                                print(f"[DEBUG] [TIKTOK] Final password value: '{final_value}'")
+                                print(f"[SUCCESS] [TIKTOK] Done fill password - NO mouse movement")
+                            except Exception as js_err:
+                                print(f"[ERROR] [TIKTOK] JavaScript password fill failed: {js_err}")
+                                # Fallback: Try Selenium send_keys without clicking
                                 try:
-                                    driver.execute_script(f"arguments[0].value = '{password}';", password_field)
-                                    driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true }));", password_field)
-                                    time.sleep(0.5)
-                                    print(f"[SUCCESS] [TIKTOK] Done fill password bằng JavaScript")
-                                except Exception as js_error:
-                                    print(f"[ERROR] [TIKTOK] JavaScript password cũng thất bại: {js_error}")
+                                    print(f"🔄 [TIKTOK] Fallback: Using Selenium send_keys for password")
+                                    driver.execute_script("arguments[0].focus();", password_field)
+                                    driver.execute_script("arguments[0].select();", password_field)
+                                    password_field.send_keys(password)
+                                    time.sleep(0.3)
+                                    print(f"[SUCCESS] [TIKTOK] Fallback password send_keys successful")
+                                except Exception as fallback_err:
+                                    print(f"[ERROR] [TIKTOK] Password fallback also failed: {fallback_err}")
                                     continue
                             
                             # Verify done fill (không check value vì password field thường không trả về value)
@@ -5003,6 +5176,11 @@ try {
                     if submit_buttons:
                         submit_button = submit_buttons[0]
                         print(f"[SUCCESS] [TIKTOK] Tìm found nút submit with selector: {selector}")
+                        print(f"[DEBUG] [TIKTOK] Found {len(submit_buttons)} submit buttons")
+                        print(f"[VISIBLE] [TIKTOK] Submit button displayed: {submit_button.is_displayed()}")
+                        print(f"[ENABLED] [TIKTOK] Submit button enabled: {submit_button.is_enabled()}")
+                        print(f"[LOCATION] [TIKTOK] Submit button location: {submit_button.location}")
+                        print(f"[SIZE] [TIKTOK] Submit button size: {submit_button.size}")
                         
                         # Kiểm tra button have disabled không
                         is_disabled = submit_button.get_attribute("disabled")
@@ -5017,22 +5195,52 @@ try {
                                     break
                                 print(f"[WAITING] [TIKTOK] Đang đợi button enable... ({i+1}/10)")
                         
-                        # Thử click bình thường trước
+                        # Get button location for logging
                         try:
-                            submit_button.click()
-                            print(f"[SUCCESS] [TIKTOK] Done click nút submit bình thường")
+                            location = submit_button.location
+                            size = submit_button.size
+                            center_x = location['x'] + size['width'] / 2
+                            center_y = location['y'] + size['height'] / 2
+                            print(f"[DEBUG] [TIKTOK] Button center at ({center_x}, {center_y})")
+                        except Exception as loc_err:
+                            print(f"[WARNING] [TIKTOK] Could not get button location: {loc_err}")
+                        
+                        # Thử click bình thường trước
+                        # Submit using JavaScript with detailed logging - NO mouse movement
+                        try:
+                            print(f"[DEBUG] [TIKTOK] Submit button tag: {submit_button.tag_name}")
+                            print(f"[DEBUG] [TIKTOK] Submit button type: {submit_button.get_attribute('type')}")
+                            print(f"[DEBUG] [TIKTOK] Submit button text: '{submit_button.text}'")
+                            print(f"[DEBUG] [TIKTOK] Submit button enabled: {submit_button.is_enabled()}")
+                            print(f"[DEBUG] [TIKTOK] Submit button displayed: {submit_button.is_displayed()}")
+                            
+                            # Method 1: JavaScript click
+                            print(f"[STEP 1] [TIKTOK] JavaScript click submit button...")
+                            driver.execute_script("arguments[0].click();", submit_button)
+                            print(f"[SUCCESS] [TIKTOK] Done submit bằng JavaScript - NO mouse movement")
                             submit_clicked = True
                             break
-                        except Exception as click_error:
-                            print(f"[WARNING] [TIKTOK] Click bình thường thất bại: {click_error}")
-                            # Thử JavaScript click
+                        except Exception as js_error:
+                            print(f"[WARNING] [TIKTOK] JavaScript submit failed: {js_error}")
+                            # Method 2: Focus and press Enter
                             try:
-                                driver.execute_script("arguments[0].click();", submit_button)
-                                print(f"[SUCCESS] [TIKTOK] Done click nút submit bằng JavaScript")
+                                print(f"[STEP 2] [TIKTOK] Focus submit button...")
+                                driver.execute_script("arguments[0].focus();", submit_button)
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 3] [TIKTOK] Triggering Enter key down...")
+                                driver.execute_script("arguments[0].dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', keyCode: 13}));", submit_button)
+                                time.sleep(0.1)
+                                
+                                print(f"[STEP 4] [TIKTOK] Triggering Enter key up...")
+                                driver.execute_script("arguments[0].dispatchEvent(new KeyboardEvent('keyup', {key: 'Enter', keyCode: 13}));", submit_button)
+                                time.sleep(0.1)
+                                
+                                print(f"[SUCCESS] [TIKTOK] Done submit bằng Enter key - NO mouse movement")
                                 submit_clicked = True
                                 break
-                            except Exception as js_error:
-                                print(f"[WARNING] [TIKTOK] JavaScript click thất bại: {js_error}")
+                            except Exception as enter_error:
+                                print(f"[ERROR] [TIKTOK] Enter key submit also failed: {enter_error}")
                                 continue
                                 
                 except Exception as e:
@@ -5043,7 +5251,9 @@ try {
                 print(f"[ERROR] [TIKTOK] No thể click nút submit")
                 return False
             
-            time.sleep(3)
+            # Wait longer to check result and ensure form is submitted
+            print(f"[WAITING] [TIKTOK] Waiting 5 seconds to check login result...")
+            time.sleep(5)
             
             # Kiểm tra xem have cần 2FA không
             print(f"[DEBUG] [TIKTOK] Kiểm tra request 2FA...")
@@ -6969,6 +7179,41 @@ try {
             driver.set_page_load_timeout(30)
             driver.implicitly_wait(10)
             
+            # Fix window size and position to prevent click misalignment
+            try:
+                driver.set_window_size(1366, 768)
+                print("[SUCCESS] [WINDOW] Set window size to 1366x768")
+            except Exception as window_error:
+                print(f"[WARNING] [WINDOW] Could not set window size: {window_error}")
+            
+            # Set window position to top-left corner (0, 0)
+            try:
+                driver.set_window_position(0, 0)
+                print("[SUCCESS] [WINDOW] Set window position to (0, 0) - top-left corner")
+            except Exception as position_error:
+                print(f"[WARNING] [WINDOW] Could not set window position: {position_error}")
+            
+            # Lock virtual viewport to ensure consistent coordinates
+            try:
+                # Use CDP to set device metrics for consistent viewport
+                device_metrics = {
+                    'width': 1366,
+                    'height': 768,
+                    'deviceScaleFactor': 1.0,
+                    'mobile': False
+                }
+                driver.execute_cdp_cmd('Emulation.setDeviceMetricsOverride', device_metrics)
+                print("[SUCCESS] [VIEWPORT] Locked virtual viewport to 1366x768")
+            except Exception as viewport_error:
+                print(f"[WARNING] [VIEWPORT] Could not lock viewport: {viewport_error}")
+            
+            # Ensure window is in focus
+            try:
+                driver.switch_to.window(driver.current_window_handle)
+                print("[SUCCESS] [FOCUS] Window focused")
+            except Exception as focus_error:
+                print(f"[WARNING] [FOCUS] Could not focus window: {focus_error}")
+            
             # Apply User-Agent override and GPM anti-detection script
             try:
                 # 1. Override User-Agent qua CDP to tránh mismatch
@@ -7171,6 +7416,11 @@ try {
     def _handle_auto_login(self, driver, profile_path, auto_login, login_data, start_url):
         """Handle auto login logic"""
         try:
+            print(f"[DEBUG] [AUTOLOGIN] _handle_auto_login called")
+            print(f"[DEBUG] [AUTOLOGIN] auto_login={auto_login}")
+            print(f"[DEBUG] [AUTOLOGIN] login_data={login_data}")
+            print(f"[DEBUG] [AUTOLOGIN] start_url={start_url}")
+            
             # Check if profile is already logged in
             marker_file = os.path.join(profile_path, 'tiktok_logged_in.txt')
             
@@ -7201,15 +7451,20 @@ try {
             
             # Perform auto-login if requested
             if auto_login and login_data:
+                print(f"[DEBUG] [AUTOLOGIN] Starting auto-login process...")
                 if login_data:
                     print(f"[SECURITY] [LOGIN] Starting auto-login with provided data...")
                     if start_url:
+                        print(f"[DEBUG] [AUTOLOGIN] Navigating to start_url: {start_url}")
                         driver.get(start_url)
                         time.sleep(2)
                     else:
-                        driver.get(login_data.get('login_url', 'https://www.tiktok.com/login'))
+                        login_url = login_data.get('login_url', 'https://www.tiktok.com/login')
+                        print(f"[DEBUG] [AUTOLOGIN] Navigating to login_url: {login_url}")
+                        driver.get(login_url)
                         time.sleep(2)
                     
+                    print(f"[DEBUG] [AUTOLOGIN] Calling _perform_auto_login...")
                     login_success = self._perform_auto_login(driver, login_data, start_url)
                     if login_success:
                         print(f"[SUCCESS] [LOGIN] Auto-login successful")
@@ -7217,7 +7472,8 @@ try {
                     else:
                         print(f"[ERROR] [LOGIN] Auto-login failed")
                         return False
-            # If not performing auto-login, stay silent (no extra logs)
+            else:
+                print(f"[DEBUG] [AUTOLOGIN] No auto-login: auto_login={auto_login}, login_data={bool(login_data)}")
                 return True
                 
         except Exception as e:

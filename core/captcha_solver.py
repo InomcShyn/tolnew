@@ -164,13 +164,13 @@ class TikTokCaptchaSolver:
                 result = cv2.matchTemplate(img, rotate_button_template, cv2.TM_CCOEFF_NORMED)
                 if np.max(result) > 0.7:
                     return True
-                    
+            
             return False
             
         except Exception as e:
             self.logger.error(f"Error checking rotation UI elements: {e}")
             return False
-            
+    
     def detect_slide_captcha(self, img):
         """Phát hiện captcha trượt"""
         try:
@@ -209,7 +209,7 @@ class TikTokCaptchaSolver:
         except Exception as e:
             self.logger.error(f"Error checking slider UI elements: {e}")
             return False
-            
+    
     def detect_click_captcha(self, img):
         """Phát hiện captcha click"""
         try:
@@ -243,13 +243,13 @@ class TikTokCaptchaSolver:
             
             if lines is not None and len(lines) > 4:
                 return True
-                
+            
             return False
             
         except Exception as e:
             self.logger.error(f"Error checking click grid layout: {e}")
             return False
-            
+    
     def extract_text_from_image(self, img):
         """Trích xuất text từ hình ảnh sử dụng OCR"""
         try:
@@ -376,7 +376,7 @@ class TikTokCaptchaSolver:
         except Exception as e:
             self.logger.error(f"Error performing rotation: {e}")
             return False
-            
+    
     def drag_rotation(self, driver, element, angle):
         """Thực hiện drag rotation"""
         try:
@@ -432,12 +432,12 @@ class TikTokCaptchaSolver:
                 return True
             else:
                 self.logger.error("Failed to perform slide")
-                return False
-                
+            return False
+            
         except Exception as e:
             self.logger.error(f"Error solving slide captcha: {e}")
             return False
-            
+    
     def find_slider_element(self, driver):
         """Tìm slider element"""
         try:
@@ -556,8 +556,8 @@ class TikTokCaptchaSolver:
                 return True
             else:
                 self.logger.error("Failed to perform clicks")
-                return False
-                
+            return False
+            
         except Exception as e:
             self.logger.error(f"Error solving click captcha: {e}")
             return False
@@ -617,11 +617,11 @@ class TikTokCaptchaSolver:
         except Exception as e:
             self.logger.error(f"Error converting screenshot: {e}")
             return None
-            
+    
     def solve_captcha(self, driver):
         """Giải captcha chính"""
         try:
-            # Phát hiện loại captcha
+                # Phát hiện loại captcha
             captcha_type, confidence = self.detect_captcha_type(driver)
             
             if captcha_type is None:
@@ -639,8 +639,8 @@ class TikTokCaptchaSolver:
                 return self.solve_click_captcha(driver)
             else:
                 self.logger.warning(f"Unknown captcha type: {captcha_type}")
-                return False
-                
+            return False
+            
         except Exception as e:
             self.logger.error(f"Error solving captcha: {e}")
             return False

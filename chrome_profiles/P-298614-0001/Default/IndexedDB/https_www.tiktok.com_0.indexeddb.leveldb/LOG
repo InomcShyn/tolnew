@@ -1,0 +1,9 @@
+2025/10/27-18:19:47.336 1670 Reusing MANIFEST c:\Users\admin\tolnew\chrome_profiles\P-298614-0001\Default\IndexedDB\https_www.tiktok.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/10/27-18:19:47.337 1670 Recovering log #7
+2025/10/27-18:19:47.337 1670 Reusing old log c:\Users\admin\tolnew\chrome_profiles\P-298614-0001\Default\IndexedDB\https_www.tiktok.com_0.indexeddb.leveldb/000007.log 
+2025/10/27-18:19:47.478 1670 Compacting 1@1 + 1@2 files
+2025/10/27-18:19:47.484 1670 Generated table #10@1: 673 keys, 13062 bytes
+2025/10/27-18:19:47.484 1670 Compacted 1@1 + 1@2 files => 13062 bytes
+2025/10/27-18:19:47.486 1670 compacted to: files[ 0 0 1 0 0 0 0 ]
+2025/10/27-18:19:47.487 1670 Delete type=2 #5
+2025/10/27-18:19:47.487 1670 Delete type=2 #8

@@ -5412,9 +5412,30 @@ testuser|testpass123
         delay_var = tk.StringVar(value=str(saved_data.get('delay', 2)))
         ttk.Entry(settings_grid, textvariable=delay_var, width=10).grid(row=0, column=1, sticky=tk.W, padx=(0, 20))
         
-        # Hidden mode (default off so you can see auto-fill)
-        hidden_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(settings_grid, text="Chế độ ẩn", variable=hidden_var).grid(row=0, column=2, sticky=tk.W)
+        # Auto-launch mode info (native mode is default and integrated)
+        mode_info = ttk.Label(settings_grid, text="🛡️ Chế độ: Native (Tự động)", 
+                             font=("Segoe UI", 9, "italic"), 
+                             foreground="#27ae60")
+        mode_info.grid(row=0, column=2, sticky=tk.W, padx=(0, 5))
+        
+        # Add tooltip for mode info
+        def show_mode_tooltip(event):
+            tooltip = tk.Toplevel()
+            tooltip.wm_overrideredirect(True)
+            tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+            
+            label = tk.Label(tooltip, text="Native Mode:\n• Không WebDriver\n• Không bị phát hiện autobot\n• Autofill bằng keyboard\n• An toàn và ổn định", 
+                           background="#2c3e50", foreground="white", 
+                           font=("Segoe UI", 8), justify="left",
+                           padx=8, pady=6)
+            label.pack()
+            
+            def hide_tooltip():
+                tooltip.destroy()
+            
+            tooltip.after(3000, hide_tooltip)
+        
+        mode_info.bind("<Enter>", show_mode_tooltip)
         
         
         # Buttons
@@ -5576,8 +5597,11 @@ testuser|testpass123
                 # Trim profiles to number of accounts to avoid empty mappings
                 run_profiles = selected_profiles[:len(accounts)]
             
-            # Start bulk run
-            self._execute_bulk_run(run_profiles, url, accounts, delay, hidden_var.get())
+            # Start bulk run (always native mode for stealth)
+            print(f"🚀 [BULK-RUN] Starting bulk run with Native Mode (stealth)")
+            print(f"🛡️ [BULK-RUN] No WebDriver - No bot detection")
+            print(f"⌨️ [BULK-RUN] Keyboard-only autofill enabled")
+            self._execute_bulk_run(run_profiles, url, accounts, delay, "native")
         
         # Buttons với style rõ ràng
         start_btn = ttk.Button(buttons_frame, text="[LAUNCH] Bắt đầu", command=start_bulk_run)
@@ -5593,7 +5617,7 @@ testuser|testpass123
         # Focus vào nút Bắt đầu
         start_btn.focus()
     
-    def _execute_bulk_run(self, profiles, url, accounts, delay, hidden):
+    def _execute_bulk_run(self, profiles, url, accounts, delay, launch_mode="native"):
         """Thực thi bulk run"""
         def bulk_run_thread():
             self.status_label.config(text="Đang chạy hàng loạt...")
@@ -5603,6 +5627,8 @@ testuser|testpass123
             
             # Memory monitoring
             print(f"🧠 [BULK-RUN] Bắt đầu với {total_operations} profiles")
+            print(f"🛡️ [BULK-RUN] Launch mode: {launch_mode} (Stealth Mode)")
+            print(f"⌨️ [BULK-RUN] Autofill: Keyboard-only (no mouse movement)")
             memory_info = self.manager.get_memory_usage()
             if memory_info:
                 print(f"🧠 [BULK-RUN] RAM ban đầu: {memory_info['system_memory_percent']}%")
@@ -5647,7 +5673,7 @@ testuser|testpass123
                     if 'user_id' in account:
                         login_data['user_id'] = account['user_id']
                     
-                    print(f"[LAUNCH] [BULK-RUN] Launch {profile_name} với {login_data['username']} (format: username|password)")
+                    print(f"[LAUNCH] [BULK-RUN] Launch {profile_name} với {login_data['username']} (mode: {launch_mode})")
                     
                     # Retry mechanism for Chrome crashes
                     max_retries = 3
@@ -5656,16 +5682,30 @@ testuser|testpass123
                     
                     for retry in range(max_retries):
                         try:
-                            # Sử dụng chế độ tối ưu cho bulk operations
-                            success, result = self.manager.launch_chrome_profile(
-                                profile_name, 
-                                start_url=url,
-                                hidden=hidden, 
-                                auto_login=bool(login_data), 
-                                login_data=login_data,
-                                optimized_mode=True,  # Bật chế độ tối ưu
-                                ultra_low_memory=True  # Bật chế độ tiết kiệm RAM tối đa
-                            )
+                            if launch_mode == "native":
+                                # Native launch - no WebDriver, with keyboard-only autofill
+                                print(f"[LAUNCH] [BULK-RUN] Using native launch (keyboard-only autofill)")
+                                success, result = self.manager.launch_chrome_profile(
+                                    profile_name, 
+                                    start_url=url,
+                                    hidden=False,  # Force visible for native
+                                    auto_login=bool(login_data),  # Enable autofill in native mode
+                                    login_data=login_data,
+                                    optimized_mode=True,
+                                    ultra_low_memory=True
+                                )
+                            else:
+                                # WebDriver launch - with autofill
+                                print(f"[LAUNCH] [BULK-RUN] Using WebDriver launch (with autofill)")
+                                success, result = self.manager.launch_chrome_profile(
+                                    profile_name, 
+                                    start_url=url,
+                                    hidden=hidden, 
+                                    auto_login=bool(login_data), 
+                                    login_data=login_data,
+                                    optimized_mode=True,  # Bật chế độ tối ưu
+                                    ultra_low_memory=True  # Bật chế độ tiết kiệm RAM tối đa
+                                )
                             
                             if success:
                                 break
@@ -8079,100 +8119,99 @@ Bạn có muốn bắt đầu treo livestream?"""
                 def launch_viewer(profile_name, account):
                     """Launch một viewer cho livestream"""
                     try:
-                        print(f"📺 [LIVESTREAM] Launching viewer cho {profile_name} với account {account.get('email', 'N/A')}")
+                        # Extract actual profile name (remove extra info after |)
+                        actual_profile_name = profile_name.split(' | ')[0] if ' | ' in profile_name else profile_name
+                        print(f"📺 [LIVESTREAM] Launching viewer cho {actual_profile_name} với account {account.get('email', 'N/A')}")
 
                         # Initialize drivers dict if not exists
                         if not hasattr(self, 'drivers'):
                             self.drivers = {}
 
-                        # Stop existing driver if running
-                        if profile_name in self.drivers:
+                        # Stop existing driver if running (use actual_profile_name)
+                        if actual_profile_name in self.drivers:
                             try:
-                                self.drivers[profile_name].quit()
-                                del self.drivers[profile_name]
-                                print(f"📺 [LIVESTREAM] Đã dừng driver cũ cho {profile_name}")
+                                self.drivers[actual_profile_name].quit()
+                                del self.drivers[actual_profile_name]
+                                print(f"📺 [LIVESTREAM] Đã dừng driver cũ cho {actual_profile_name}")
                             except Exception as e:
                                 print(f"📺 [LIVESTREAM] Lỗi khi dừng driver cũ: {str(e)}")
 
-                        # Prepare login data
-                        login_data = {
-                            'email': account['email'],
-                            'password': account['password'],
-                            'username': account.get('username', ''),
-                            'email_password': account.get('email_password', ''),
-                            'session_token': account.get('session_token', ''),
-                            'password': account.get('password', '')
-                        }
-
-                        # Launch profile with login
+                        # Launch profile to livestream (profiles are already logged in, no autofill needed)
+                        print(f"📺 [LIVESTREAM] Launching {actual_profile_name} to livestream URL")
+                        print(f"📺 [LIVESTREAM] URL: {url}")
+                        print(f"📺 [LIVESTREAM] Hidden mode: {hidden}")
+                        print(f"📺 [LIVESTREAM] No autofill - profiles are already logged in")
+                        
                         success, result = self.manager.launch_chrome_profile(
-                            profile_name,
+                            actual_profile_name,
                             start_url=url,
-                            hidden=hidden,
-                            auto_login=True,
-                            login_data=login_data
+                            hidden=hidden,  # Always hidden for livestream
+                            auto_login=False,  # No autofill needed
+                            login_data=None  # No login data needed
                         )
 
                         if success:
-                            print(f"✅ [LIVESTREAM] Viewer {profile_name} đã join livestream thành công")
-                            active_viewers[profile_name] = {
+                            print(f"✅ [LIVESTREAM] Viewer {actual_profile_name} đã join livestream thành công")
+                            active_viewers[actual_profile_name] = {
                                 'driver': result,
                                 'account': account,
                                 'start_time': time.time()
                             }
-                            self.drivers[profile_name] = result
+                            self.drivers[actual_profile_name] = result
                             return True
                         else:
-                            print(f"❌ [LIVESTREAM] Không thể launch viewer {profile_name}: {result}")
+                            print(f"❌ [LIVESTREAM] Không thể launch viewer {actual_profile_name}: {result}")
                             return False
                     except Exception as e:
-                        print(f"❌ [LIVESTREAM] Lỗi khi launch viewer {profile_name}: {str(e)}")
+                        print(f"❌ [LIVESTREAM] Lỗi khi launch viewer {actual_profile_name}: {str(e)}")
                         return False
             
                 def replace_viewer(profile_name):
                     """Thay thế một viewer"""
-                try:
-                    print(f"🔄 [LIVESTREAM] Thay thế viewer {profile_name}")
-                    
-                    # Initialize drivers dict if not exists
-                    if not hasattr(self, 'drivers'):
-                        self.drivers = {}
-                    
-                    # Stop current viewer
-                    if profile_name in active_viewers:
-                        try:
-                            active_viewers[profile_name]['driver'].quit()
-                            print(f"📺 [LIVESTREAM] Đã dừng viewer cũ {profile_name}")
-                        except Exception as e:
-                            print(f"📺 [LIVESTREAM] Lỗi khi dừng viewer cũ: {str(e)}")
+                    try:
+                        # Extract actual profile name
+                        actual_profile_name = profile_name.split(' | ')[0] if ' | ' in profile_name else profile_name
+                        print(f"🔄 [LIVESTREAM] Thay thế viewer {actual_profile_name}")
                         
-                        # Move account to backup pool
-                        old_account = active_viewers[profile_name]['account']
-                        backup_accounts.append(old_account)
-                        del active_viewers[profile_name]
-                    
-                    # Remove from drivers dict
-                    if profile_name in self.drivers:
-                        del self.drivers[profile_name]
-                    
-                    # Wait before replacing
-                    time.sleep(replace_delay_seconds)
-                    
-                    # Get new account from pool
-                    if account_pool:
-                        new_account = account_pool.pop(0)
-                        success = launch_viewer(profile_name, new_account)
-                        if success:
-                            print(f"✅ [LIVESTREAM] Đã thay thế viewer {profile_name} thành công")
+                        # Initialize drivers dict if not exists
+                        if not hasattr(self, 'drivers'):
+                            self.drivers = {}
+                        
+                        # Stop current viewer
+                        if actual_profile_name in active_viewers:
+                            try:
+                                active_viewers[actual_profile_name]['driver'].quit()
+                                print(f"📺 [LIVESTREAM] Đã dừng viewer cũ {actual_profile_name}")
+                            except Exception as e:
+                                print(f"📺 [LIVESTREAM] Lỗi khi dừng viewer cũ: {str(e)}")
+                            
+                            # Move account to backup pool
+                            old_account = active_viewers[actual_profile_name]['account']
+                            backup_accounts.append(old_account)
+                            del active_viewers[actual_profile_name]
+                        
+                        # Remove from drivers dict
+                        if actual_profile_name in self.drivers:
+                            del self.drivers[actual_profile_name]
+                        
+                        # Wait before replacing
+                        time.sleep(replace_delay_seconds)
+                        
+                        # Get new account from pool
+                        if account_pool:
+                            new_account = account_pool.pop(0)
+                            success = launch_viewer(actual_profile_name, new_account)
+                            if success:
+                                print(f"✅ [LIVESTREAM] Đã thay thế viewer {actual_profile_name} thành công")
+                            else:
+                                # Put account back to pool if failed
+                                account_pool.insert(0, new_account)
+                                print(f"❌ [LIVESTREAM] Thay thế viewer {actual_profile_name} thất bại")
                         else:
-                            # Put account back to pool if failed
-                            account_pool.insert(0, new_account)
-                            print(f"❌ [LIVESTREAM] Thay thế viewer {profile_name} thất bại")
-                    else:
-                        print(f"⚠️ [LIVESTREAM] Không còn account trong pool để thay thế {profile_name}")
-                        
-                except Exception as e:
-                    print(f"❌ [LIVESTREAM] Lỗi khi thay thế viewer {profile_name}: {str(e)}")
+                            print(f"⚠️ [LIVESTREAM] Không còn account trong pool để thay thế {actual_profile_name}")
+                            
+                    except Exception as e:
+                        print(f"❌ [LIVESTREAM] Lỗi khi thay thế viewer {actual_profile_name}: {str(e)}")
             
                 # Initial launch - launch viewers up to max_viewers
                 initial_profiles = profiles[:max_viewers]

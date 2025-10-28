@@ -20,7 +20,7 @@ def main():
     if core_dir.exists():
         sys.path.insert(0, str(core_dir))
     
-    # Import và chạy GUI
+    # Import và chạy GUIuô
     try:
         from core.gui_manager_modern import ModernChromeProfileManager
         app = ModernChromeProfileManager()
