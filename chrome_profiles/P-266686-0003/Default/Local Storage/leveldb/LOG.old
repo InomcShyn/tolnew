@@ -1,5 +1,5 @@
-2025/10/27-22:30:26.385 29d8 Reusing MANIFEST c:\Users\admin\tolnew\chrome_profiles\P-266686-0003\Default\Local Storage\leveldb/MANIFEST-000001
-2025/10/27-22:30:26.390 29d8 Recovering log #4
-2025/10/27-22:30:26.391 29d8 Level-0 table #7: started
-2025/10/27-22:30:26.399 29d8 Level-0 table #7: 116056 bytes OK
-2025/10/27-22:30:26.403 29d8 Delete type=0 #4
+2025/11/06-17:32:55.125 1484 Reusing MANIFEST C:\Users\admin\tolnew\chrome_profiles\P-266686-0003\Default\Local Storage\leveldb/MANIFEST-000001
+2025/11/06-17:32:55.178 1484 Recovering log #31
+2025/11/06-17:32:55.218 1484 Reusing old log C:\Users\admin\tolnew\chrome_profiles\P-266686-0003\Default\Local Storage\leveldb/000031.log 
+2025/11/06-17:33:10.011 1484 Level-0 table #34: started
+2025/11/06-17:33:10.061 1484 Level-0 table #34: 29016 bytes OK

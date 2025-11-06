@@ -1,3 +1,5 @@
-2025/10/27-22:32:29.404 6d9c Reusing MANIFEST c:\Users\admin\tolnew\chrome_profiles\P-298614-0001\Default\shared_proto_db\metadata/MANIFEST-000001
-2025/10/27-22:32:29.406 6d9c Recovering log #3
-2025/10/27-22:32:29.406 6d9c Reusing old log c:\Users\admin\tolnew\chrome_profiles\P-298614-0001\Default\shared_proto_db\metadata/000003.log 
+2025/11/06-17:08:10.665 3aa4 Recovering log #7
+2025/11/06-17:08:10.665 3aa4 Level-0 table #9: started
+2025/11/06-17:08:10.779 3aa4 Level-0 table #9: 157 bytes OK
+2025/11/06-17:08:10.899 3aa4 Delete type=0 #7
+2025/11/06-17:08:10.899 3aa4 Delete type=3 #5

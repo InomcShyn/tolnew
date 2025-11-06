@@ -1,0 +1,10 @@
+2025/11/06-18:31:03.115 2550 Reusing MANIFEST C:\Users\admin\tolnew\chrome_profiles\P-448353-8503\Default\Local Storage\leveldb/MANIFEST-000001
+2025/11/06-18:31:03.124 2550 Recovering log #3
+2025/11/06-18:31:03.125 2550 Level-0 table #3: started
+2025/11/06-18:31:03.139 2550 Level-0 table #3: 99228 bytes OK
+2025/11/06-18:31:03.140 2550 Recovering log #4
+2025/11/06-18:31:03.141 2550 Level-0 table #4: started
+2025/11/06-18:31:03.155 2550 Level-0 table #4: 112053 bytes OK
+2025/11/06-18:31:03.164 2550 Delete type=0 #3
+2025/11/06-18:31:03.165 2550 Delete type=0 #4
+2025/11/06-18:31:03.165 2550 Delete type=2 #5

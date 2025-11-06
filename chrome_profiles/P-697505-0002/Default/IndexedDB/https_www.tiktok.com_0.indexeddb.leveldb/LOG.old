@@ -1,7 +1,3 @@
-2025/10/27-22:11:38.856 16f0 Reusing MANIFEST c:\Users\admin\tolnew\chrome_profiles\P-697505-0002\Default\IndexedDB\https_www.tiktok.com_0.indexeddb.leveldb/MANIFEST-000001
-2025/10/27-22:11:38.857 16f0 Recovering log #3
-2025/10/27-22:11:38.858 16f0 Reusing old log c:\Users\admin\tolnew\chrome_profiles\P-697505-0002\Default\IndexedDB\https_www.tiktok.com_0.indexeddb.leveldb/000003.log 
-2025/10/27-22:11:40.470 6824 Level-0 table #5: started
-2025/10/27-22:11:40.479 6824 Level-0 table #5: 10176 bytes OK
-2025/10/27-22:11:40.482 6824 Delete type=0 #3
-2025/10/27-22:11:40.482 df0 Manual compaction at level-0 from '\x00\x04\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x05\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/11/01-09:34:01.862 70cc Reusing MANIFEST C:\Users\admin\tolnew\chrome_profiles\P-697505-0002\Default\IndexedDB\https_www.tiktok.com_0.indexeddb.leveldb/MANIFEST-000001
+2025/11/01-09:34:01.863 70cc Recovering log #4
+2025/11/01-09:34:01.870 70cc Reusing old log C:\Users\admin\tolnew\chrome_profiles\P-697505-0002\Default\IndexedDB\https_www.tiktok.com_0.indexeddb.leveldb/000004.log 

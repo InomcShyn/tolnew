@@ -1,0 +1,31 @@
+{
+  "profile": {
+    "name": "P-448353-8503",
+    "avatar_icon": "chrome://theme/IDR_PROFILE_AVATAR_0"
+  },
+  "browser": {
+    "show_home_button": false
+  },
+  "bookmark_bar": {
+    "show_on_all_tabs": false
+  },
+  "extensions": {
+    "settings": {},
+    "alerts": {},
+    "chrome_url_overrides": {},
+    "commands": {},
+    "last_chrome_version": "",
+    "install_signature": {},
+    "pending": {}
+  },
+  "google": {},
+  "signin": {
+    "allowed": false
+  },
+  "intl": {
+    "accept_languages": "en-US,en;q=0.9"
+  },
+  "notifications": {
+    "default_content_setting": 2
+  }
+}

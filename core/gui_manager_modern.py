@@ -632,6 +632,9 @@ class ModernChromeProfileManager:
         ttk.Button(control_frame, text="🗑️ Xóa hàng loạt", 
                   style='Modern.TButton',
                   command=self.bulk_delete_selected).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(control_frame, text="🧹 Xóa lịch sử web", 
+                  style='Modern.TButton',
+                  command=self.clear_history_selected).pack(side=tk.LEFT, padx=(0, 8))
         # Removed "Install Extensions" button per request
         
         # Stats frame với style đẹp hơn
@@ -883,159 +886,444 @@ class ModernChromeProfileManager:
         self.update_import_profile_combo()
         
     def show_extensions_tab(self):
-        """Hiển thị tab Extensions Management"""
-        self.update_tab_highlight('../extensions')
-        self.clear_content()
+        """Modern Extension Management - GUI-based"""
+        try:
+            print("[DEBUG] [GUI-EXT] show_extensions_tab() called")
+            self.update_tab_highlight('../extensions')
+            self.clear_content()
+            
+            # Header
+            header_frame = ttk.Frame(self.content_frame, style='Modern.TFrame')
+            header_frame.pack(fill=tk.X, pady=(0, 20))
+            
+            title_label = ttk.Label(header_frame, text="🔌 Extension Management", 
+                                   style='Modern.TLabel', font=('Arial', 24, 'bold'))
+            title_label.pack()
+            
+            subtitle_label = ttk.Label(header_frame, text="Copy extensions from source profile to target profiles", 
+                                     style='Modern.TLabel', 
+                                     font=('Segoe UI', 11),
+                                     foreground='#b3b3b3')
+            subtitle_label.pack(pady=(5, 0))
+            
+            # Mode switcher
+            mode_frame = ttk.Frame(header_frame, style='Modern.TFrame')
+            mode_frame.pack(pady=(10, 0))
+            
+            mode_var = tk.StringVar(value="modern")
+            ttk.Radiobutton(mode_frame, text="Modern Mode (Copy from Profile)", 
+                           variable=mode_var, value="modern",
+                           command=lambda: self._switch_extension_mode("modern")).pack(side=tk.LEFT, padx=(0, 20))
+            ttk.Radiobutton(mode_frame, text="Legacy Mode (WebStore Install)", 
+                           variable=mode_var, value="legacy",
+                           command=lambda: self._switch_extension_mode("legacy")).pack(side=tk.LEFT)
+            
+            # Modern extension management GUI
+            print("[DEBUG] [GUI-EXT] Building modern extension GUI...")
+            self._build_modern_extension_gui()
+            print("[DEBUG] [GUI-EXT] Modern extension GUI built successfully")
+            
+            # Store mode variable
+            self.extension_mode_var = mode_var
+        except Exception as e:
+            print(f"[ERROR] [GUI-EXT] Error in show_extensions_tab: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _switch_extension_mode(self, mode):
+        """Switch between modern and legacy extension management"""
+        if mode == "modern":
+            self._build_modern_extension_gui()
+        else:
+            self._build_legacy_extension_gui()
+    
+    def _build_modern_extension_gui(self):
+        """Build modern 2-column extension management GUI"""
+        try:
+            # Clear existing widgets (except header frame which is the first child)
+            children = list(self.content_frame.winfo_children())
+            header_frame = None
+            if children:
+                header_frame = children[0]  # First child is header frame
+            
+            # Destroy all widgets except header
+            for widget in children:
+                if widget != header_frame:
+                    try:
+                        widget.destroy()
+                    except:
+                        pass
+            
+            # Initialize variables if needed
+            if not hasattr(self, 'source_profile_var'):
+                self.source_profile_var = tk.StringVar()
+            if not hasattr(self, 'extension_checkboxes'):
+                self.extension_checkboxes = {}
+            if not hasattr(self, 'profile_checkboxes'):
+                self.profile_checkboxes = {}
+            
+            # Source profile selection
+            source_frame = ttk.LabelFrame(self.content_frame, text="📁 Source Profile", 
+                                         style='Modern.TLabelframe', padding=15)
+            source_frame.pack(fill=tk.X, pady=(0, 15))
+            
+            source_row = ttk.Frame(source_frame, style='Modern.TFrame')
+            source_row.pack(fill=tk.X)
+            
+            ttk.Entry(source_row, textvariable=self.source_profile_var, width=60, 
+                     font=("Consolas", 10), state='readonly').pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+            
+            ttk.Button(source_row, text="Chọn Folder Chrome Profile", 
+                      command=self._select_source_profile).pack(side=tk.RIGHT)
+            
+            # Main content: 2 columns
+            main_frame = ttk.Frame(self.content_frame, style='Modern.TFrame')
+            main_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+            
+            # Left column: Extensions list
+            left_frame = ttk.LabelFrame(main_frame, text="📦 Extensions (Source)", 
+                                       style='Modern.TLabelframe', padding=10)
+            left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+            
+            # Extension list with checkbox
+            ext_list_frame = ttk.Frame(left_frame, style='Modern.TFrame')
+            ext_list_frame.pack(fill=tk.BOTH, expand=True)
+            
+            # Scrollbar for extensions
+            ext_scrollbar = ttk.Scrollbar(ext_list_frame)
+            ext_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+            self.extensions_listbox = tk.Listbox(ext_list_frame, selectmode=tk.EXTENDED,
+                                               font=("Consolas", 9), yscrollcommand=ext_scrollbar.set,
+                                               exportselection=False)
+            self.extensions_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            ext_scrollbar.config(command=self.extensions_listbox.yview)
+            
+            # "Select All" checkbox for extensions
+            ext_select_all_var = tk.BooleanVar()
+            self.ext_select_all_var = ext_select_all_var
+            ttk.Checkbutton(left_frame, text="Chọn tất cả extensions", 
+                           variable=ext_select_all_var,
+                           command=lambda: self._toggle_all_extensions(ext_select_all_var.get())).pack(pady=(10, 0))
+            
+            # Right column: Profiles list
+            right_frame = ttk.LabelFrame(main_frame, text="👤 Profiles (Target)", 
+                                        style='Modern.TLabelframe', padding=10)
+            right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+            
+            # Profile list with checkbox
+            prof_list_frame = ttk.Frame(right_frame, style='Modern.TFrame')
+            prof_list_frame.pack(fill=tk.BOTH, expand=True)
+            
+            # Scrollbar for profiles
+            prof_scrollbar = ttk.Scrollbar(prof_list_frame)
+            prof_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+            self.profiles_listbox = tk.Listbox(prof_list_frame, selectmode=tk.EXTENDED,
+                                              font=("Consolas", 9), yscrollcommand=prof_scrollbar.set,
+                                              exportselection=False)
+            self.profiles_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            prof_scrollbar.config(command=self.profiles_listbox.yview)
+            
+            # "Select All" checkbox for profiles
+            prof_select_all_var = tk.BooleanVar()
+            self.prof_select_all_var = prof_select_all_var
+            ttk.Checkbutton(right_frame, text="Chọn tất cả profiles", 
+                           variable=prof_select_all_var,
+                           command=lambda: self._toggle_all_profiles(prof_select_all_var.get())).pack(pady=(10, 0))
+            
+            # Action buttons
+            action_frame = ttk.Frame(self.content_frame, style='Modern.TFrame')
+            action_frame.pack(fill=tk.X, pady=(0, 15))
+            
+            ttk.Button(action_frame, text="🔄 Refresh Lists", 
+                      command=self._refresh_extension_lists).pack(side=tk.LEFT, padx=(0, 10))
+            
+            ttk.Button(action_frame, text="✅ Cài đặt Extension (Install)", 
+                      style='Modern.TButton',
+                      command=self._install_selected_extensions).pack(side=tk.RIGHT)
+            
+            # Status display
+            status_frame = ttk.LabelFrame(self.content_frame, text="📊 Status", 
+                                         style='Modern.TLabelframe', padding=15)
+            status_frame.pack(fill=tk.BOTH, expand=True)
+            
+            status_text_frame = ttk.Frame(status_frame, style='Modern.TFrame')
+            status_text_frame.pack(fill=tk.BOTH, expand=True)
+            
+            self.modern_ext_status_text = tk.Text(status_text_frame, height=10, width=80,
+                                                 font=("Consolas", 9), bg='#f8f9fa', fg='#2c3e50')
+            status_scrollbar = ttk.Scrollbar(status_text_frame, orient="vertical",
+                                            command=self.modern_ext_status_text.yview)
+            self.modern_ext_status_text.configure(yscrollcommand=status_scrollbar.set)
+            
+            self.modern_ext_status_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            status_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+            # Initialize - auto load profiles from chrome_profiles
+            chrome_profiles_dir = os.path.join(os.getcwd(), "chrome_profiles")
+            self._load_profiles_from_chrome_profiles(chrome_profiles_dir)
+            self._log_status("Ready. Please select a source Chrome profile folder to load extensions.")
+        except Exception as e:
+            print(f"[ERROR] [GUI-EXT] Error building modern extension GUI: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _build_legacy_extension_gui(self):
+        """Build legacy extension management GUI (original SwitchyOmega-focused)"""
+        # Placeholder for legacy mode - can be implemented later
+        pass
+    
+    def _select_source_profile(self):
+        """Open folder dialog to select Chrome profile from chrome_profiles folder"""
+        # Default to chrome_profiles folder in current working directory
+        default_path = os.path.join(os.getcwd(), "chrome_profiles")
         
-        # Header
-        header_frame = ttk.Frame(self.content_frame, style='Modern.TFrame')
-        header_frame.pack(fill=tk.X, pady=(0, 20))
+        folder = filedialog.askdirectory(
+            title="Chọn Chrome Profile Folder từ chrome_profiles",
+            initialdir=default_path if os.path.exists(default_path) else os.getcwd()
+        )
         
-        title_label = ttk.Label(header_frame, text="🔌 Extension Management", 
-                               style='Modern.TLabel', font=('Arial', 24, 'bold'))
-        title_label.pack()
+        if folder:
+            self.source_profile_var.set(folder)
+            self._load_extensions_from_profile(folder)
+            # Load all profiles from chrome_profiles folder (parent directory)
+            chrome_profiles_dir = os.path.join(os.getcwd(), "chrome_profiles")
+            self._load_profiles_from_chrome_profiles(chrome_profiles_dir)
+    
+    def _load_extensions_from_profile(self, profile_path):
+        """Load extensions from selected profile"""
+        try:
+            from core.tiles.tile_extension_management import load_extensions_from_profile_path
+            
+            self._log_status(f"Loading extensions from: {profile_path}...")
+            extensions = load_extensions_from_profile_path(profile_path)
+            
+            # Clear existing
+            self.extensions_listbox.delete(0, tk.END)
+            self.extension_checkboxes.clear()
+            
+            if not extensions:
+                self._log_status("No extensions found in this profile.")
+                return
+            
+            # Add to listbox
+            for ext in extensions:
+                status_icon = "✓" if ext.get('enabled', True) else "✗"
+                display_text = f"{status_icon} {ext['name']} (v{ext['version']})"
+                self.extensions_listbox.insert(tk.END, display_text)
+                
+                # Store extension data
+                idx = self.extensions_listbox.size() - 1
+                self.extension_checkboxes[idx] = {
+                    'id': ext['id'],
+                    'name': ext['name'],
+                    'version': ext['version'],
+                    'enabled': ext.get('enabled', True)
+                }
+            
+            self._log_status(f"✓ Loaded {len(extensions)} extensions successfully!")
+            
+        except Exception as e:
+            error_msg = f"Error loading extensions: {str(e)}"
+            self._log_status(f"✗ {error_msg}")
+            print(f"[ERROR] [GUI-EXT] {error_msg}")
+            import traceback
+            traceback.print_exc()
+    
+    def _load_profiles_from_chrome_profiles(self, chrome_profiles_dir):
+        """Load profiles from chrome_profiles directory"""
+        try:
+            if not os.path.exists(chrome_profiles_dir):
+                self._log_status(f"Chrome profiles directory not found: {chrome_profiles_dir}")
+                return
+            
+            self._log_status(f"Loading profiles from: {chrome_profiles_dir}...")
+            
+            profiles = []
+            
+            # Scan chrome_profiles directory for profile folders
+            for item in os.listdir(chrome_profiles_dir):
+                item_path = os.path.join(chrome_profiles_dir, item)
+                if os.path.isdir(item_path):
+                    # Check if it's a valid profile (has Default folder or Extensions folder)
+                    default_path = os.path.join(item_path, "Default")
+                    extensions_path_default = os.path.join(item_path, "Default", "Extensions")
+                    extensions_path_direct = os.path.join(item_path, "Extensions")
+                    # Valid profile if has Default folder OR Extensions folder
+                    if os.path.exists(default_path) or os.path.exists(extensions_path_default) or os.path.exists(extensions_path_direct):
+                        profiles.append({
+                            'name': item,
+                            'path': item_path,
+                            'is_default': False
+                        })
+            
+            # Sort profiles by name
+            profiles.sort(key=lambda x: x['name'])
+            
+            # Clear existing
+            self.profiles_listbox.delete(0, tk.END)
+            self.profile_checkboxes.clear()
+            
+            if not profiles:
+                self._log_status("No profiles found in chrome_profiles directory.")
+                return
+            
+            # Add to listbox
+            for prof in profiles:
+                display_text = prof['name']
+                self.profiles_listbox.insert(tk.END, display_text)
+                
+                # Store profile data
+                idx = self.profiles_listbox.size() - 1
+                self.profile_checkboxes[idx] = {
+                    'name': prof['name'],
+                    'path': prof['path'],
+                    'is_default': prof.get('is_default', False)
+                }
+            
+            self._log_status(f"✓ Loaded {len(profiles)} profiles successfully!")
+            
+        except Exception as e:
+            error_msg = f"Error loading profiles: {str(e)}"
+            self._log_status(f"✗ {error_msg}")
+            print(f"[ERROR] [GUI-EXT] {error_msg}")
+            import traceback
+            traceback.print_exc()
+    
+    def _refresh_extension_lists(self):
+        """Refresh both extension and profile lists"""
+        if self.source_profile_var.get():
+            self._load_extensions_from_profile(self.source_profile_var.get())
+            # Always load from chrome_profiles folder
+            chrome_profiles_dir = os.path.join(os.getcwd(), "chrome_profiles")
+            self._load_profiles_from_chrome_profiles(chrome_profiles_dir)
+        else:
+            self._log_status("Please select a source profile first.")
+    
+    def _toggle_all_extensions(self, select_all):
+        """Toggle selection of all extensions"""
+        if select_all:
+            self.extensions_listbox.selection_set(0, tk.END)
+        else:
+            self.extensions_listbox.selection_clear(0, tk.END)
+    
+    def _toggle_all_profiles(self, select_all):
+        """Toggle selection of all profiles"""
+        if select_all:
+            self.profiles_listbox.selection_set(0, tk.END)
+        else:
+            self.profiles_listbox.selection_clear(0, tk.END)
+    
+    def _install_selected_extensions(self):
+        """Install selected extensions to selected profiles"""
+        import threading
         
-        subtitle_label = ttk.Label(header_frame, text="Manage Proxy SwitchyOmega 3 extension for all profiles", 
-                                 style='Modern.TLabel', 
-                                 font=('Segoe UI', 11),
-                                 foreground='#b3b3b3')
-        subtitle_label.pack(pady=(5, 0))
+        # Get selected extensions
+        selected_ext_indices = self.extensions_listbox.curselection()
+        if not selected_ext_indices:
+            messagebox.showwarning("Warning", "Please select at least one extension!")
+            return
         
-        # Extension info frame
-        info_frame = ttk.LabelFrame(self.content_frame, text="📋 Extension Information", 
-                                   style='Modern.TLabelframe', padding=20)
-        info_frame.pack(fill=tk.X, pady=(0, 20))
+        selected_extension_ids = []
+        for idx in selected_ext_indices:
+            if idx in self.extension_checkboxes:
+                selected_extension_ids.append(self.extension_checkboxes[idx]['id'])
         
-        # Extension details
-        extension_info = """
-🌐 Proxy SwitchyOmega 3 (ZeroOmega)
-• Version: 3.4.1 (Manifest V3)
-• Developer: suziwen1
-• Features: Multiple proxy management, Gist sync, custom themes
-• Source: https://github.com/zero-peak/ZeroOmega
-• Chrome Web Store: https://chromewebstore.google.com/detail/proxy-switchyomega-3-zero/pfnededegaaopdmhkdmcofjmoldfiped
-        """
+        if not selected_extension_ids:
+            messagebox.showwarning("Warning", "No valid extensions selected!")
+            return
         
-        info_text = tk.Text(info_frame, height=8, width=80, font=("Consolas", 10), 
-                           bg='#f8f9fa', fg='#2c3e50', wrap=tk.WORD)
-        info_text.pack(fill=tk.X)
-        info_text.insert(tk.END, extension_info.strip())
-        info_text.config(state=tk.DISABLED)
+        # Get selected profiles
+        selected_prof_indices = self.profiles_listbox.curselection()
+        if not selected_prof_indices:
+            messagebox.showwarning("Warning", "Please select at least one target profile!")
+            return
         
-        # Control buttons frame
-        control_frame = ttk.LabelFrame(self.content_frame, text="🎯 Extension Actions", 
-                                      style='Modern.TLabelframe', padding=20)
-        control_frame.pack(fill=tk.X, pady=(0, 20))
+        selected_profile_paths = []
+        for idx in selected_prof_indices:
+            if idx in self.profile_checkboxes:
+                selected_profile_paths.append(self.profile_checkboxes[idx]['path'])
         
-        # Buttons grid
-        buttons_grid = ttk.Frame(control_frame, style='Modern.TFrame')
-        buttons_grid.pack(fill=tk.X)
+        if not selected_profile_paths:
+            messagebox.showwarning("Warning", "No valid profiles selected!")
+            return
         
-        # Row 1: Main extension operations
-        row1 = ttk.Frame(buttons_grid, style='Modern.TFrame')
-        row1.pack(fill=tk.X, pady=(0, 10))
+        # Get source profile path
+        source_profile_path = self.source_profile_var.get()
+        if not source_profile_path:
+            messagebox.showerror("Error", "Please select a source profile first!")
+            return
         
-        ttk.Button(row1, text="🔍 Check Status", 
-                  style='Modern.TButton',
-                  command=self.check_extension_status).pack(side=tk.LEFT, padx=(0, 10))
+        # Confirm
+        confirm_msg = (f"Install {len(selected_extension_ids)} extension(s) to "
+                     f"{len(selected_profile_paths)} profile(s)?\n\n"
+                     f"Extensions: {', '.join([self.extension_checkboxes[idx]['name'] 
+                                              for idx in selected_ext_indices])}\n"
+                     f"Profiles: {', '.join([self.profile_checkboxes[idx]['name'] 
+                                            for idx in selected_prof_indices])}")
         
-        ttk.Button(row1, text="📦 Install for New Profiles", 
-                  style='Modern.TButton',
-                  command=self.install_extension_for_new_profiles).pack(side=tk.LEFT, padx=(0, 10))
+        if not messagebox.askyesno("Confirm Installation", confirm_msg):
+            return
         
-        ttk.Button(row1, text="[LAUNCH] Install for All Profiles", 
-                  style='Modern.TButton',
-                  command=self.install_extension_for_all_profiles).pack(side=tk.LEFT, padx=(0, 10))
+        # Start installation in background thread
+        def install_thread():
+            try:
+                from core.tiles.tile_extension_management import install_extensions_to_profiles
+                
+                self._log_status(f"Starting installation...\n"
+                               f"Extensions: {len(selected_extension_ids)}\n"
+                               f"Profiles: {len(selected_profile_paths)}\n"
+                               f"=" * 50)
+                
+                result = install_extensions_to_profiles(
+                    selected_extension_ids,
+                    source_profile_path,
+                    selected_profile_paths
+                )
+                
+                # Display results
+                self._log_status(f"\nInstallation completed!\n"
+                               f"✓ Success: {result['success_count']}\n"
+                               f"✗ Failed: {result['failed_count']}\n"
+                               f"=" * 50)
+                
+                for ext_result in result['results']:
+                    ext_id = ext_result['extension_id']
+                    for prof_result in ext_result['result']['results']:
+                        status = "✓" if prof_result['success'] else "✗"
+                        self._log_status(f"{status} {ext_id} -> {prof_result['profile']}: {prof_result['message']}")
+                
+                # Show completion message
+                if result['success_count'] > 0:
+                    self.root.after(0, lambda: messagebox.showinfo(
+                        "Installation Complete",
+                        f"Successfully installed {result['success_count']} extension(s)!\n"
+                        f"Failed: {result['failed_count']}"
+                    ))
+                else:
+                    self.root.after(0, lambda: messagebox.showerror(
+                        "Installation Failed",
+                        f"All installations failed!\n"
+                        f"Failed: {result['failed_count']}"
+                    ))
+                
+            except Exception as e:
+                error_msg = f"Installation error: {str(e)}"
+                self._log_status(f"\n✗ {error_msg}")
+                print(f"[ERROR] [GUI-EXT] {error_msg}")
+                import traceback
+                traceback.print_exc()
+                self.root.after(0, lambda: messagebox.showerror("Error", error_msg))
         
-        ttk.Button(row1, text="📋 Install for Selected", 
-                  style='Modern.TButton',
-                  command=self.install_extension_selected).pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Row 2: Configuration and management
-        row2 = ttk.Frame(buttons_grid, style='Modern.TFrame')
-        row2.pack(fill=tk.X, pady=(0, 10))
-        
-        ttk.Button(row2, text="🌐 Configure Proxy Selected", 
-                  style='Modern.TButton',
-                  command=self.configure_proxy_selected).pack(side=tk.LEFT, padx=(0, 10))
-        
-        ttk.Button(row2, text="🌐 Configure Proxy All", 
-                  style='Modern.TButton',
-                  command=self.configure_proxy_all).pack(side=tk.LEFT, padx=(0, 10))
-        
-        ttk.Button(row2, text="⚡ Activate Extension", 
-                  style='Modern.TButton',
-                  command=self.activate_extension_selected).pack(side=tk.LEFT, padx=(0, 10))
-        
-        ttk.Button(row2, text="🔄 Refresh Status", 
-                  style='Modern.TButton',
-                  command=self.refresh_extension_status).pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Row 3: Advanced operations
-        row3 = ttk.Frame(buttons_grid, style='Modern.TFrame')
-        row3.pack(fill=tk.X)
-        
-        ttk.Button(row3, text="📊 Extension Statistics", 
-                  style='Modern.TButton',
-                  command=self.show_extension_statistics).pack(side=tk.LEFT, padx=(0, 10))
-        
-        ttk.Button(row3, text="🧪 Test Installation", 
-                  style='Modern.TButton',
-                  command=self.test_extension_installation).pack(side=tk.LEFT, padx=(0, 10))
-        
-        ttk.Button(row3, text="[LAUNCH] Auto-Install Startup", 
-                  style='Modern.TButton',
-                  command=self.auto_install_extension_startup).pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Row 4: Extension management only
-        row4 = ttk.Frame(buttons_grid, style='Modern.TFrame')
-        row4.pack(fill=tk.X, pady=(10, 0))
-        
-        ttk.Button(row4, text="📊 Extension Statistics", 
-                  style='Modern.TButton',
-                  command=self.show_extension_statistics).pack(side=tk.LEFT, padx=(0, 10))
-        
-        ttk.Button(row4, text="🧪 Test Installation", 
-                  style='Modern.TButton',
-                  command=self.test_extension_installation).pack(side=tk.LEFT, padx=(0, 10))
-        
-        ttk.Button(row4, text="[LAUNCH] Auto-Install Startup", 
-                  style='Modern.TButton',
-                  command=self.auto_install_extension_startup).pack(side=tk.LEFT, padx=(0, 10))
-        
-        # General extensions (independent of SwitchyOmega)
-        general_frame = ttk.LabelFrame(self.content_frame, text="🧩 General Extensions", 
-                                       style='Modern.TLabelframe', padding=20)
-        general_frame.pack(fill=tk.X, pady=(0, 20))
-        gen_row = ttk.Frame(general_frame, style='Modern.TFrame')
-        gen_row.pack(fill=tk.X)
-        ttk.Button(gen_row, text="📥 Install CRX for Selected Profiles", 
-                  style='Modern.TButton',
-                  command=self.show_general_extensions_installer).pack(side=tk.LEFT, padx=(0, 10))
-        ttk.Button(gen_row, text="📥 Install CRX for ALL Profiles", 
-                  style='Modern.TButton',
-                  command=lambda: self.show_general_extensions_installer(select_all=True)).pack(side=tk.LEFT)
-        
-        # Status display frame
-        status_frame = ttk.LabelFrame(self.content_frame, text="📊 Extension Status", 
-                                     style='Modern.TLabelframe', padding=20)
-        status_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Status text with scrollbar
-        status_text_frame = ttk.Frame(status_frame, style='Modern.TFrame')
-        status_text_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self.extension_status_text = tk.Text(status_text_frame, height=15, width=80, 
-                                           font=("Consolas", 9), bg='#f8f9fa', fg='#2c3e50')
-        status_scrollbar = ttk.Scrollbar(status_text_frame, orient="vertical", 
-                                        command=self.extension_status_text.yview)
-        self.extension_status_text.configure(yscrollcommand=status_scrollbar.set)
-        
-        self.extension_status_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        status_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # Initial status check
-        self.refresh_extension_status()
+        threading.Thread(target=install_thread, daemon=True).start()
+    
+    def _log_status(self, message):
+        """Log status message to status text area"""
+        if hasattr(self, 'modern_ext_status_text'):
+            self.modern_ext_status_text.insert(tk.END, f"{message}\n")
+            self.modern_ext_status_text.see(tk.END)
+            self.modern_ext_status_text.update()
 
     def show_general_extensions_installer(self, select_all: bool = False):
         """Install multiple arbitrary CRX files (paths or URLs) to many profiles."""
@@ -1050,6 +1338,11 @@ class ModernChromeProfileManager:
         dialog.resizable(False, False)
         dialog.transient(self.root)
         dialog.grab_set()
+        # Prevent initial collapsed layout on some DPI/scales
+        try:
+            dialog.minsize(1000, 700)
+        except Exception:
+            pass
         
         container = ttk.Frame(dialog, padding=15)
         container.pack(fill=tk.BOTH, expand=True)
@@ -5123,6 +5416,29 @@ Bạn có muốn tiếp tục?"""
             self.root.after(0, update_ui)
         
         threading.Thread(target=bulk_delete_thread, daemon=True).start()
+
+    def clear_history_selected(self):
+        """Xóa lịch sử web cho các profile đã chọn (không xóa cache/password)."""
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showwarning("Cảnh báo", "Vui lòng chọn ít nhất một profile!")
+            return
+        selected_profiles = [self.tree.item(item)['text'] for item in selection]
+
+        if not messagebox.askyesno("Xác nhận", f"Xóa lịch sử web cho {len(selected_profiles)} profiles?"):
+            return
+
+        def worker():
+            try:
+                ok, msg = self.manager.clear_browsing_history(selected_profiles)
+                if ok:
+                    messagebox.showinfo("Thành công", msg)
+                else:
+                    messagebox.showwarning("Hoàn tất với lỗi", msg)
+            except Exception as e:
+                messagebox.showerror("Lỗi", f"Không thể xóa lịch sử: {e}")
+
+        threading.Thread(target=worker, daemon=True).start()
     
     def bulk_run_selected(self):
         """Chạy hàng loạt cho các profiles đã chọn"""
@@ -5194,6 +5510,34 @@ Bạn có muốn tiếp tục?"""
                            command=lambda u=url: url_var.set(u),
                            style="Accent.TButton")
             btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # OMOcaptcha API Key input
+        omocaptcha_frame = ttk.LabelFrame(main_frame, text="🔑 OMOcaptcha API Key", padding="10")
+        omocaptcha_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        omocaptcha_help = ttk.Label(omocaptcha_frame, 
+                                   text="Nhập API key của OMOcaptcha để tự động giải captcha khi login.\n" +
+                                        "API key sẽ được tự động điền vào extension OMOcaptcha trong profile.",
+                                   font=("Segoe UI", 9), foreground="gray")
+        omocaptcha_help.pack(anchor=tk.W, pady=(0, 5))
+        
+        omocaptcha_api_key_var = tk.StringVar(value=saved_data.get('omocaptcha_api_key', ''))
+        omocaptcha_entry = ttk.Entry(omocaptcha_frame, textvariable=omocaptcha_api_key_var, 
+                                    font=("Consolas", 10), show="*")
+        omocaptcha_entry.pack(fill=tk.X, pady=(0, 5))
+        
+        # Show/Hide toggle
+        show_omocaptcha_var = tk.BooleanVar(value=False)
+        def toggle_omocaptcha_visibility():
+            if show_omocaptcha_var.get():
+                omocaptcha_entry.config(show="")
+            else:
+                omocaptcha_entry.config(show="*")
+        
+        show_omocaptcha_check = ttk.Checkbutton(omocaptcha_frame, text="Hiển thị API key", 
+                                               variable=show_omocaptcha_var,
+                                               command=toggle_omocaptcha_visibility)
+        show_omocaptcha_check.pack(anchor=tk.W)
         
         # Format selection
         format_frame = ttk.Frame(main_frame)
@@ -5450,7 +5794,8 @@ testuser|testpass123
             data = {
                 'url': url_var.get(),
                 'accounts': accounts_text.get("1.0", "end-1c"),
-                'delay': delay_var.get()
+                'delay': delay_var.get(),
+                'omocaptcha_api_key': omocaptcha_api_key_var.get()
             }
             self._save_bulk_run_data(data)
             messagebox.showinfo("Thành công", "Đã lưu dữ liệu!")
@@ -5460,6 +5805,7 @@ testuser|testpass123
                 url_var.set("https://www.tiktok.com/login/phone-or-email/email")
                 accounts_text.delete("1.0", tk.END)
                 delay_var.set("2")
+                omocaptcha_api_key_var.set("")
                 self._save_bulk_run_data({})
                 messagebox.showinfo("Thành công", "Đã xóa dữ liệu!")
         
@@ -5471,11 +5817,15 @@ testuser|testpass123
             url = url_var.get().strip()
             accounts_text_content = accounts_text.get("1.0", "end-1c").strip()
             
+            # Get OMOcaptcha API key
+            omocaptcha_api_key = omocaptcha_api_key_var.get().strip()
+            
             # Save data before running
             self._save_bulk_run_data({
                 'url': url,
                 'accounts': accounts_text_content,
-                'delay': delay_var.get()
+                'delay': delay_var.get(),
+                'omocaptcha_api_key': omocaptcha_api_key
             })
             try:
                 print(f"🧾 [BULK-RUN] Raw accounts length: {len(accounts_text_content)}")
@@ -5601,7 +5951,9 @@ testuser|testpass123
             print(f"🚀 [BULK-RUN] Starting bulk run with Native Mode (stealth)")
             print(f"🛡️ [BULK-RUN] No WebDriver - No bot detection")
             print(f"⌨️ [BULK-RUN] Keyboard-only autofill enabled")
-            self._execute_bulk_run(run_profiles, url, accounts, delay, "native")
+            if omocaptcha_api_key:
+                print(f"🔑 [BULK-RUN] OMOcaptcha API key provided: {omocaptcha_api_key[:10]}...{omocaptcha_api_key[-5:]}")
+            self._execute_bulk_run(run_profiles, url, accounts, delay, "native", omocaptcha_api_key)
         
         # Buttons với style rõ ràng
         start_btn = ttk.Button(buttons_frame, text="[LAUNCH] Bắt đầu", command=start_bulk_run)
@@ -5617,7 +5969,7 @@ testuser|testpass123
         # Focus vào nút Bắt đầu
         start_btn.focus()
     
-    def _execute_bulk_run(self, profiles, url, accounts, delay, launch_mode="native"):
+    def _execute_bulk_run(self, profiles, url, accounts, delay, launch_mode="native", omocaptcha_api_key=None):
         """Thực thi bulk run"""
         def bulk_run_thread():
             self.status_label.config(text="Đang chạy hàng loạt...")
@@ -5674,6 +6026,14 @@ testuser|testpass123
                         login_data['user_id'] = account['user_id']
                     
                     print(f"[LAUNCH] [BULK-RUN] Launch {profile_name} với {login_data['username']} (mode: {launch_mode})")
+                    
+                    # Save OMOcaptcha API key to extension if provided
+                    if omocaptcha_api_key:
+                        try:
+                            self.manager.set_omocaptcha_api_key(profile_name, omocaptcha_api_key)
+                            print(f"🔑 [BULK-RUN] Đã lưu OMOcaptcha API key vào profile {profile_name}")
+                        except Exception as e:
+                            print(f"⚠️ [BULK-RUN] Không thể lưu OMOcaptcha API key: {str(e)}")
                     
                     # Retry mechanism for Chrome crashes
                     max_retries = 3
@@ -6323,7 +6683,14 @@ testuser|testpass123
             lambda e: basic_canvas.configure(scrollregion=basic_canvas.bbox("all"))
         )
         
-        basic_canvas.create_window((0, 0), window=basic_scrollable_frame, anchor="nw")
+        _basic_window_id = basic_canvas.create_window((0, 0), window=basic_scrollable_frame, anchor="nw")
+        # Ensure inner frame matches canvas width when resizing (prevents hidden content until manual resize)
+        def _on_basic_canvas_configure(event):
+            try:
+                basic_canvas.itemconfig(_basic_window_id, width=event.width)
+            except Exception:
+                pass
+        basic_canvas.bind('<Configure>', _on_basic_canvas_configure)
         basic_canvas.configure(yscrollcommand=basic_scrollbar.set)
         
         basic_canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
@@ -7661,17 +8028,19 @@ Last Login: {login_time}
                               cursor='hand2')
         refresh_btn.pack(side=tk.LEFT, padx=(0, 10))
         
-        check_btn = tk.Button(button_frame, text="🔍 Check All", 
-                            command=check_all_accounts, font=('Segoe UI', 9, 'bold'),
-                            bg='#f39c12', fg='white', relief='flat', padx=20, pady=8,
-                            cursor='hand2')
-        check_btn.pack(side=tk.LEFT, padx=(0, 10))
+        # Check All button disabled per request
+        # check_btn = tk.Button(button_frame, text="🔍 Check All", 
+        #                     command=check_all_accounts, font=('Segoe UI', 9, 'bold'),
+        #                     bg='#f39c12', fg='white', relief='flat', padx=20, pady=8,
+        #                     cursor='hand2')
+        # check_btn.pack(side=tk.LEFT, padx=(0, 10))
         
-        select_all_btn = tk.Button(button_frame, text="✅ Chọn tất cả", 
-                                 command=select_all_profiles, font=('Segoe UI', 9, 'bold'),
-                                 bg='#27ae60', fg='white', relief='flat', padx=20, pady=8,
-                                 cursor='hand2')
-        select_all_btn.pack(side=tk.LEFT, padx=(0, 10))
+        # Select All button disabled per request
+        # select_all_btn = tk.Button(button_frame, text="✅ Chọn tất cả", 
+        #                          command=select_all_profiles, font=('Segoe UI', 9, 'bold'),
+        #                          bg='#27ae60', fg='white', relief='flat', padx=20, pady=8,
+        #                          cursor='hand2')
+        # select_all_btn.pack(side=tk.LEFT, padx=(0, 10))
         
         select_healthy_btn = tk.Button(button_frame, text="🟢 Chọn healthy", 
                                      command=select_healthy_only, font=('Segoe UI', 9, 'bold'),
@@ -7706,11 +8075,12 @@ Last Login: {login_time}
         clear_sessions_btn.pack(side=tk.LEFT, padx=(0, 10))
         
         # TikTok account management buttons
-        add_account_btn = tk.Button(button_frame, text="➕ Thêm Account", 
-                                  command=add_tiktok_account, font=('Segoe UI', 9, 'bold'),
-                                  bg='#27ae60', fg='white', relief='flat', padx=20, pady=8,
-                                  cursor='hand2')
-        add_account_btn.pack(side=tk.LEFT, padx=(0, 10))
+        # Add Account button disabled per request
+        # add_account_btn = tk.Button(button_frame, text="➕ Thêm Account", 
+        #                           command=add_tiktok_account, font=('Segoe UI', 9, 'bold'),
+        #                           bg='#27ae60', fg='white', relief='flat', padx=20, pady=8,
+        #                           cursor='hand2')
+        # add_account_btn.pack(side=tk.LEFT, padx=(0, 10))
         
         edit_account_btn = tk.Button(button_frame, text="✏️ Sửa Account", 
                                    command=edit_tiktok_account, font=('Segoe UI', 9, 'bold'),
@@ -7724,17 +8094,19 @@ Last Login: {login_time}
                                      cursor='hand2')
         delete_account_btn.pack(side=tk.LEFT, padx=(0, 10))
         
-        export_accounts_btn = tk.Button(button_frame, text="📤 Export Accounts", 
-                                      command=export_tiktok_accounts, font=('Segoe UI', 9, 'bold'),
-                                      bg='#8e44ad', fg='white', relief='flat', padx=20, pady=8,
-                                      cursor='hand2')
-        export_accounts_btn.pack(side=tk.LEFT, padx=(0, 10))
+        # Export Accounts button disabled per request
+        # export_accounts_btn = tk.Button(button_frame, text="📤 Export Accounts", 
+        #                               command=export_tiktok_accounts, font=('Segoe UI', 9, 'bold'),
+        #                               bg='#8e44ad', fg='white', relief='flat', padx=20, pady=8,
+        #                               cursor='hand2')
+        # export_accounts_btn.pack(side=tk.LEFT, padx=(0, 10))
         
-        import_accounts_btn = tk.Button(button_frame, text="📥 Import Accounts", 
-                                      command=import_tiktok_accounts, font=('Segoe UI', 9, 'bold'),
-                                      bg='#34495e', fg='white', relief='flat', padx=20, pady=8,
-                                      cursor='hand2')
-        import_accounts_btn.pack(side=tk.LEFT, padx=(0, 10))
+        # Import Accounts button disabled per request
+        # import_accounts_btn = tk.Button(button_frame, text="📥 Import Accounts", 
+        #                               command=import_tiktok_accounts, font=('Segoe UI', 9, 'bold'),
+        #                               bg='#34495e', fg='white', relief='flat', padx=20, pady=8,
+        #                               cursor='hand2')
+        # import_accounts_btn.pack(side=tk.LEFT, padx=(0, 10))
         
         # Profile listbox with improved styling
         profiles_frame = tk.LabelFrame(accounts_tab, text="👥 Danh sách Profiles với Status Check", 
@@ -8058,6 +8430,25 @@ Bạn có muốn bắt đầu treo livestream?"""
             
             cleanup()
             
+            # Push OMOcaptcha API key from config.ini into extension storage for selected profiles
+            try:
+                import configparser
+                cfg = configparser.ConfigParser()
+                cfg_path = os.path.join(os.getcwd(), 'config.ini')
+                omokey = None
+                if os.path.exists(cfg_path):
+                    cfg.read(cfg_path, encoding='utf-8')
+                    if cfg.has_section('CAPTCHA'):
+                        omokey = (cfg.get('CAPTCHA', 'omocaptcha_api_key', fallback='') or '').strip()
+                        if omokey and omokey.lower() not in ('your_api_key_here','your_omocaptcha_api_key_here'):
+                            for pn in selected_profiles_for_livestream:
+                                try:
+                                    self.manager.set_omocaptcha_api_key(pn, omokey)
+                                except Exception:
+                                    pass
+            except Exception:
+                pass
+
             # Start livestream with basic settings first
             # Create dummy accounts for testing
             dummy_accounts = []
@@ -8094,6 +8485,75 @@ Bạn có muốn bắt đầu treo livestream?"""
         
         # Focus vào nút Bắt đầu
         start_btn.focus()
+    
+    def _check_and_solve_captcha_for_livestream(self, profile_name):
+        """
+        Helper function để check và giải captcha cho livestream viewer
+        Sử dụng Native OMOcaptcha Solver (không cần WebDriver)
+        """
+        try:
+            # Load OMOcaptcha API key từ config
+            omocaptcha_api_key = None
+            try:
+                import configparser
+                config = configparser.ConfigParser()
+                config_path = os.path.join(os.getcwd(), 'config.ini')
+                if os.path.exists(config_path):
+                    config.read(config_path, encoding='utf-8')
+                    if config.has_section('CAPTCHA'):
+                        omocaptcha_api_key = config.get('CAPTCHA', 'omocaptcha_api_key', fallback=None)
+                        if omocaptcha_api_key:
+                            omocaptcha_api_key = omocaptcha_api_key.strip()
+                            # Check if placeholder or empty
+                            if not omocaptcha_api_key or omocaptcha_api_key in ('YOUR_API_KEY_HERE', 'YOUR_OMOCAPTCHA_API_KEY_HERE', ''):
+                                print(f"⚠️ [LIVESTREAM-CAPTCHA] API key is placeholder or empty in config.ini")
+                                omocaptcha_api_key = None
+                            else:
+                                print(f"✅ [LIVESTREAM-CAPTCHA] Loaded API key: {omocaptcha_api_key[:10]}...{omocaptcha_api_key[-5:]}")
+                    else:
+                        print(f"⚠️ [LIVESTREAM-CAPTCHA] No [CAPTCHA] section in config.ini")
+                else:
+                    print(f"⚠️ [LIVESTREAM-CAPTCHA] config.ini not found at {config_path}")
+            except Exception as cfg_err:
+                print(f"⚠️ [LIVESTREAM-CAPTCHA] Không thể đọc config: {cfg_err}")
+                import traceback
+                print(traceback.format_exc())
+            
+            if not omocaptcha_api_key:
+                print(f"⚠️ [LIVESTREAM-CAPTCHA] No valid API key found, skipping captcha solving")
+                return False  # Không có API key, skip
+            
+            # Thử giải captcha bằng Native OMOcaptcha Solver
+            try:
+                from core.native_omocaptcha_solver import NativeOMOcaptchaSolver
+                print(f"🔧 [LIVESTREAM-CAPTCHA] Initializing solver with API key...")
+                solver = NativeOMOcaptchaSolver(omocaptcha_api_key)
+                
+                # Verify client is initialized
+                if not solver.omocaptcha_client:
+                    print(f"❌ [LIVESTREAM-CAPTCHA] Failed to initialize OMOcaptcha client. Check API key validity.")
+                    return False
+                
+                print(f"🔍 [LIVESTREAM-CAPTCHA] Đang kiểm tra captcha cho {profile_name}...")
+                success = solver.solve_captcha()
+                
+                if success:
+                    print(f"✅ [LIVESTREAM-CAPTCHA] Đã giải captcha thành công cho {profile_name}!")
+                    return True
+                else:
+                    # Không có captcha hoặc giải thất bại (không quan trọng)
+                    return False
+                    
+            except ImportError:
+                print(f"⚠️ [LIVESTREAM-CAPTCHA] Native OMOcaptcha solver not available")
+                return False
+            except Exception as solve_err:
+                print(f"⚠️ [LIVESTREAM-CAPTCHA] Lỗi khi giải captcha cho {profile_name}: {solve_err}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ [LIVESTREAM-CAPTCHA] Lỗi tổng thể khi check captcha cho {profile_name}: {e}")
+            return False
     
     def _execute_livestream(self, profiles, url, accounts, auto_out_minutes, replace_delay_seconds, max_viewers, hidden):
         """Thực thi treo livestream với auto-replace accounts"""
@@ -8225,6 +8685,7 @@ Bạn có muốn bắt đầu treo livestream?"""
                         time.sleep(2)  # Small delay between launches
             
                 # Main loop - monitor and replace viewers
+                captcha_check_counter = 0  # Counter để check captcha định kỳ
                 while True:
                     try:
                         current_time = time.time()
@@ -8235,6 +8696,15 @@ Bạn có muốn bắt đầu treo livestream?"""
                             elapsed_time = current_time - viewer_info['start_time']
                             if elapsed_time >= (auto_out_minutes * 60):  # Convert to seconds
                                 viewers_to_replace.append(profile_name)
+                    
+                        # Check và giải captcha định kỳ (mỗi 2 phút một lần)
+                        captcha_check_counter += 1
+                        if captcha_check_counter >= 4:  # 30s * 4 = 2 phút
+                            captcha_check_counter = 0
+                            print(f"🔍 [LIVESTREAM-CAPTCHA] Đang kiểm tra captcha cho {len(active_viewers)} viewers...")
+                            for profile_name, viewer_info in active_viewers.items():
+                                self._check_and_solve_captcha_for_livestream(profile_name)
+                                time.sleep(2)  # Delay nhỏ giữa các viewer để tránh overload
                     
                         # Replace viewers that need replacement
                         for profile_name in viewers_to_replace:
@@ -8295,6 +8765,7 @@ Bạn có muốn bắt đầu treo livestream?"""
             active_viewers = {}  # {profile_name: {'driver': driver, 'account': account, 'start_time': time, 'retry_count': int}}
             backup_accounts = []  # Accounts dự phòng
             failed_accounts = []  # Accounts thất bại
+            captcha_check_counter = 0  # Counter để check captcha định kỳ
             stats = {
                 'total_launched': 0,
                 'successful_launches': 0,
@@ -8474,6 +8945,16 @@ Bạn có muốn bắt đầu treo livestream?"""
                     # Cleanup failed accounts periodically
                     if len(failed_accounts) > 50:  # Cleanup when too many failed accounts
                         cleanup_failed_accounts()
+                    
+                    # Check và giải captcha định kỳ (mỗi check_interval * 4 lần, tức khoảng 2-4 phút tùy cấu hình)
+                    captcha_check_counter += 1
+                    captcha_check_interval = max(4, int(120 / check_interval))  # ~2 phút
+                    if captcha_check_counter >= captcha_check_interval:
+                        captcha_check_counter = 0
+                        print(f"🔍 [LIVESTREAM-ADVANCED-CAPTCHA] Đang kiểm tra captcha cho {len(active_viewers)} viewers...")
+                        for profile_name, viewer_info in active_viewers.items():
+                            self._check_and_solve_captcha_for_livestream(profile_name)
+                            time.sleep(1)  # Delay nhỏ giữa các viewer
                     
                     # Memory optimization
                     if memory_optimization and len(active_viewers) % 20 == 0:
@@ -8681,10 +9162,21 @@ Bạn có muốn bắt đầu treo livestream?"""
             print(f"📺 [LIVESTREAM-PROFILES] Đã launch {len(active_viewers)} viewers ban đầu")
             
             # Main loop - monitor and replace viewers
+            captcha_check_counter = 0  # Counter để check captcha định kỳ
             while True:
                 try:
                     current_time = time.time()
                     viewers_to_replace = []
+                    
+                    # Check và giải captcha định kỳ (mỗi 2 phút một lần)
+                    captcha_check_counter += 1
+                    captcha_check_interval = max(4, int(120 / check_interval))  # ~2 phút
+                    if captcha_check_counter >= captcha_check_interval:
+                        captcha_check_counter = 0
+                        print(f"🔍 [LIVESTREAM-PROFILES-CAPTCHA] Đang kiểm tra captcha cho {len(active_viewers)} viewers...")
+                        for profile_name, viewer_info in active_viewers.items():
+                            self._check_and_solve_captcha_for_livestream(profile_name)
+                            time.sleep(1)  # Delay nhỏ giữa các viewer
                     
                     # Check for viewers that need to be replaced
                     for profile_name, viewer_info in active_viewers.items():

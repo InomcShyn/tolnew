@@ -1,0 +1,8 @@
+2025/10/31-22:33:33.472 bf8 Reusing MANIFEST c:\Users\admin\tolnew\chrome_profiles\P-486673-8202\Default\Local Storage\leveldb/MANIFEST-000001
+2025/10/31-22:33:33.487 bf8 Recovering log #3
+2025/10/31-22:33:33.491 bf8 Level-0 table #3: started
+2025/10/31-22:33:33.511 bf8 Level-0 table #3: 99273 bytes OK
+2025/10/31-22:33:33.517 bf8 Recovering log #4
+2025/10/31-22:33:33.551 bf8 Reusing old log c:\Users\admin\tolnew\chrome_profiles\P-486673-8202\Default\Local Storage\leveldb/000004.log 
+2025/10/31-22:33:33.563 bf8 Delete type=0 #3
+2025/10/31-22:33:33.563 bf8 Delete type=2 #5

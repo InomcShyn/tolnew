@@ -1,14 +1,3 @@
-2025/10/27-22:30:34.289 52ac Reusing MANIFEST c:\Users\admin\tolnew\chrome_profiles\P-298614-0001\Default\Local Storage\leveldb/MANIFEST-000001
-2025/10/27-22:30:34.295 52ac Recovering log #60
-2025/10/27-22:30:34.295 52ac Level-0 table #62: started
-2025/10/27-22:30:34.319 52ac Level-0 table #62: 45119 bytes OK
-2025/10/27-22:30:34.322 52ac Delete type=0 #60
-2025/10/27-22:30:34.323 2b3c Compacting 4@0 + 1@1 files
-2025/10/27-22:30:34.449 2b3c Generated table #64@0: 91 keys, 480197 bytes
-2025/10/27-22:30:34.449 2b3c Compacted 4@0 + 1@1 files => 480197 bytes
-2025/10/27-22:30:34.458 2b3c compacted to: files[ 0 1 1 0 0 0 0 ]
-2025/10/27-22:30:34.492 2b3c Delete type=2 #51
-2025/10/27-22:30:34.494 2b3c Delete type=2 #54
-2025/10/27-22:30:34.495 2b3c Delete type=2 #56
-2025/10/27-22:30:34.497 2b3c Delete type=2 #59
-2025/10/27-22:30:34.498 2b3c Delete type=2 #62
+2025/11/06-14:46:36.203 dc0 Reusing MANIFEST C:\Users\admin\tolnew\chrome_profiles\P-298614-0001\Default\Local Storage\leveldb/MANIFEST-000001
+2025/11/06-14:46:36.207 dc0 Recovering log #75
+2025/11/06-14:46:36.211 dc0 Reusing old log C:\Users\admin\tolnew\chrome_profiles\P-298614-0001\Default\Local Storage\leveldb/000075.log 
