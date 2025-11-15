@@ -1,4 +1,0 @@
-username=user2451679980761
-email=user2451679980761
-timestamp=1761563944.5120428
-url=https://www.tiktok.com

@@ -2,6 +2,7 @@ import os
 import time
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
+import json as _json
 
 # === Extension management functions (moved from chrome_manager.py) ===
 # Refactored to support ANY extension, not just SwitchyOmega
@@ -393,6 +394,131 @@ def check_extension_installed(manager, profile_name, extension_id="pfnededegaaop
             return False
     except Exception as e:
         print(f"[ERROR] [EXTENSION-CHECK] Error checking extension for {profile_name}: {str(e)}")
+        return False
+
+
+# === OMOcaptcha helpers ===
+
+def _get_omocaptcha_extension_id_override(manager):
+    try:
+        if hasattr(manager, 'config') and manager.config is not None and manager.config.has_section('CAPTCHA'):
+            ext_id = (manager.config.get('CAPTCHA', 'omocaptcha_extension_id', fallback='') or '').strip()
+            if ext_id:
+                return ext_id
+    except Exception:
+        pass
+    try:
+        import os as _os
+        ext_id = (_os.environ.get('OMO_EXTENSION_ID') or '').strip()
+        if ext_id:
+            return ext_id
+    except Exception:
+        pass
+    return ''
+
+
+def find_omocaptcha_extension_id(manager, profile_path):
+    try:
+        override = _get_omocaptcha_extension_id_override(manager)
+        if override:
+            return override
+        known_ext_id = 'dfjghhjachoacpgpkmbpdlpppeagojhe'
+        for base in (os.path.join(profile_path, 'Default', 'Extensions'), os.path.join(profile_path, 'Extensions')):
+            ext_path = os.path.join(base, known_ext_id)
+            if os.path.exists(ext_path) and os.path.isdir(ext_path):
+                versions = [d for d in os.listdir(ext_path) if os.path.isdir(os.path.join(ext_path, d))]
+                for ver in versions:
+                    manifest_path = os.path.join(ext_path, ver, 'manifest.json')
+                    if os.path.exists(manifest_path):
+                        try:
+                            with open(manifest_path, 'r', encoding='utf-8') as f:
+                                manifest = _json.load(f)
+                            name = str(manifest.get('name', '')).lower()
+                            if 'omo' in name and 'captcha' in name:
+                                return known_ext_id
+                        except Exception:
+                            pass
+        # Fallback scan
+        for base in (os.path.join(profile_path, 'Default', 'Extensions'), os.path.join(profile_path, 'Extensions')):
+            if os.path.exists(base):
+                for ext_id in os.listdir(base):
+                    ext_path = os.path.join(base, ext_id)
+                    if not os.path.isdir(ext_path):
+                        continue
+                    versions = [d for d in os.listdir(ext_path) if os.path.isdir(os.path.join(ext_path, d))]
+                    for ver in versions:
+                        manifest_path = os.path.join(ext_path, ver, 'manifest.json')
+                        if os.path.exists(manifest_path):
+                            try:
+                                with open(manifest_path, 'r', encoding='utf-8') as f:
+                                    manifest = _json.load(f)
+                                name = str(manifest.get('name', '')).lower()
+                                if 'omo' in name and 'captcha' in name:
+                                    return ext_id
+                            except Exception:
+                                pass
+        # Preferences fallback
+        for prefs_name in (os.path.join(profile_path, 'Default', 'Preferences'), os.path.join(profile_path, 'Preferences')):
+            if os.path.exists(prefs_name):
+                try:
+                    with open(prefs_name, 'r', encoding='utf-8') as f:
+                        prefs = _json.load(f)
+                    settings = prefs.get('extensions', {}).get('settings', {})
+                    if known_ext_id in settings:
+                        m = settings[known_ext_id].get('manifest', {})
+                        name = str(m.get('name', '')).lower()
+                        if 'omo' in name and 'captcha' in name:
+                            return known_ext_id
+                    for ext_id, data in settings.items():
+                        m = data.get('manifest', {})
+                        name = str(m.get('name', '')).lower()
+                        if 'omo' in name and 'captcha' in name:
+                            return ext_id
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return None
+
+
+def inject_omocaptcha_key_via_driver(manager, driver, profile_path, ext_id=None):
+    try:
+        # Reuse manager's config getter
+        api_key = manager._get_omocaptcha_api_key_from_config()
+        if not api_key:
+            return False
+        ext_id = ext_id or find_omocaptcha_extension_id(manager, profile_path)
+        if not ext_id:
+            print('[WARNING] [OMO] Extension ID not found; cannot inject key via CDP')
+            return False
+        # Try common pages
+        import time as _time
+        for page in ('index.html','options.html','home.html','settings.html','popup.html'):
+            try:
+                url = f"chrome-extension://{ext_id}/{page}"
+                driver.get(url)
+                _time.sleep(1.5)
+                break
+            except Exception:
+                continue
+        try:
+            driver.execute_script(
+                "chrome.storage.local.set({apiKey: arguments[0], api_key: arguments[0], omocaptcha_api_key: arguments[0]});"
+                "chrome.storage.sync && chrome.storage.sync.set({apiKey: arguments[0], api_key: arguments[0], omocaptcha_api_key: arguments[0]});",
+                api_key
+            )
+            print('[SUCCESS] [OMO] Injected API key into chrome.storage (local/sync) via extension page')
+            return True
+        except Exception as e:
+            try:
+                driver.execute_script("localStorage.setItem('apiKey', arguments[0]); localStorage.setItem('omocaptcha_api_key', arguments[0]); localStorage.setItem('api_key', arguments[0]);", api_key)
+                print('[SUCCESS] [OMO] Injected API key into localStorage (fallback)')
+                return True
+            except Exception as ee:
+                print(f"[ERROR] [OMO] Injection via driver failed: {ee}")
+        return False
+    except Exception as e:
+        print(f"[ERROR] [OMO] Unexpected error injecting key: {e}")
         return False
 
 

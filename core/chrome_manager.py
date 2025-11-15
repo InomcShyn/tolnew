@@ -19,7 +19,23 @@ try:
     from core.tiles.tile_config_management import load_config as _tile_load_config, create_default_config as _tile_create_default_config, save_config as _tile_save_config
     from core.tiles.tile_logging import append_app_log as _tile_append_app_log, get_chrome_log_path as _tile_get_chrome_log_path, read_chrome_log as _tile_read_chrome_log
     from core.tiles.tile_chrome_binary import resolve_chrome_binary_path as _tile_resolve_chrome_binary_path, gpm_chrome_path_for_version as _tile_gpm_chrome_path_for_version, ensure_cft_chrome_binary as _tile_ensure_cft_chrome_binary, ensure_cft_chromedriver as _tile_ensure_cft_chromedriver, apply_custom_chrome_binary as _tile_apply_custom_chrome_binary
-    from core.tiles.tile_proxy_management import set_profile_proxy as _tile_set_profile_proxy
+    from core.tiles.tile_proxy_management import (
+        set_profile_proxy as _tile_set_profile_proxy,
+        get_switchyomega_settings_path as _tile_get_switchyomega_settings_path,
+        apply_proxy_via_settings as _tile_apply_proxy_via_settings,
+        apply_proxy_via_settings_string as _tile_apply_proxy_via_settings_string,
+        bulk_apply_proxy_map_via_settings as _tile_bulk_apply_proxy_map_via_settings,
+        force_import_settings_into_extension as _tile_force_import_settings_into_extension,
+        input_proxy_from_ui as _tile_input_proxy_from_ui,
+        bulk_input_proxy_from_ui as _tile_bulk_input_proxy_from_ui,
+        test_proxy_connection as _tile_test_proxy_connection,
+        analyze_profile_proxy_status as _tile_analyze_profile_proxy_status,
+        get_profiles_with_proxy as _tile_get_profiles_with_proxy,
+        get_profiles_without_proxy as _tile_get_profiles_without_proxy,
+        smart_configure_proxy as _tile_smart_configure_proxy,
+        bulk_smart_configure_proxy as _tile_bulk_smart_configure_proxy,
+        get_proxy_from_profile_settings as _tile_get_proxy_from_profile_settings
+    )
     from core.tiles.tile_session_management import clear_profile_name_cache as _tile_clear_profile_name_cache, clear_existing_proxy_data as _tile_clear_existing_proxy_data
     from core.tiles.tile_automation import launch_chrome_profile as _tile_launch_chrome_profile
     from core.tiles.tile_livestream import run_livestream_profiles as _tile_run_livestream_profiles
@@ -36,7 +52,23 @@ except Exception:
         from .tiles.tile_config_management import load_config as _tile_load_config, create_default_config as _tile_create_default_config, save_config as _tile_save_config
         from .tiles.tile_logging import append_app_log as _tile_append_app_log, get_chrome_log_path as _tile_get_chrome_log_path, read_chrome_log as _tile_read_chrome_log
         from .tiles.tile_chrome_binary import resolve_chrome_binary_path as _tile_resolve_chrome_binary_path, gpm_chrome_path_for_version as _tile_gpm_chrome_path_for_version, ensure_cft_chrome_binary as _tile_ensure_cft_chrome_binary, ensure_cft_chromedriver as _tile_ensure_cft_chromedriver, apply_custom_chrome_binary as _tile_apply_custom_chrome_binary
-        from .tiles.tile_proxy_management import set_profile_proxy as _tile_set_profile_proxy
+        from .tiles.tile_proxy_management import (
+            set_profile_proxy as _tile_set_profile_proxy,
+            get_switchyomega_settings_path as _tile_get_switchyomega_settings_path,
+            apply_proxy_via_settings as _tile_apply_proxy_via_settings,
+            apply_proxy_via_settings_string as _tile_apply_proxy_via_settings_string,
+            bulk_apply_proxy_map_via_settings as _tile_bulk_apply_proxy_map_via_settings,
+            force_import_settings_into_extension as _tile_force_import_settings_into_extension,
+            input_proxy_from_ui as _tile_input_proxy_from_ui,
+            bulk_input_proxy_from_ui as _tile_bulk_input_proxy_from_ui,
+            test_proxy_connection as _tile_test_proxy_connection,
+            analyze_profile_proxy_status as _tile_analyze_profile_proxy_status,
+            get_profiles_with_proxy as _tile_get_profiles_with_proxy,
+            get_profiles_without_proxy as _tile_get_profiles_without_proxy,
+            smart_configure_proxy as _tile_smart_configure_proxy,
+            bulk_smart_configure_proxy as _tile_bulk_smart_configure_proxy,
+            get_proxy_from_profile_settings as _tile_get_proxy_from_profile_settings
+        )
         from .tiles.tile_session_management import clear_profile_name_cache as _tile_clear_profile_name_cache, clear_existing_proxy_data as _tile_clear_existing_proxy_data
         from .tiles.tile_automation import launch_chrome_profile as _tile_launch_chrome_profile
         from .tiles.tile_livestream import run_livestream_profiles as _tile_run_livestream_profiles
@@ -57,7 +89,23 @@ except Exception:
         from core.tiles.tile_config_management import load_config as _tile_load_config, create_default_config as _tile_create_default_config, save_config as _tile_save_config
         from core.tiles.tile_logging import append_app_log as _tile_append_app_log, get_chrome_log_path as _tile_get_chrome_log_path, read_chrome_log as _tile_read_chrome_log
         from core.tiles.tile_chrome_binary import resolve_chrome_binary_path as _tile_resolve_chrome_binary_path, gpm_chrome_path_for_version as _tile_gpm_chrome_path_for_version, ensure_cft_chrome_binary as _tile_ensure_cft_chrome_binary, ensure_cft_chromedriver as _tile_ensure_cft_chromedriver, apply_custom_chrome_binary as _tile_apply_custom_chrome_binary
-        from core.tiles.tile_proxy_management import set_profile_proxy as _tile_set_profile_proxy
+        from core.tiles.tile_proxy_management import (
+            set_profile_proxy as _tile_set_profile_proxy,
+            get_switchyomega_settings_path as _tile_get_switchyomega_settings_path,
+            apply_proxy_via_settings as _tile_apply_proxy_via_settings,
+            apply_proxy_via_settings_string as _tile_apply_proxy_via_settings_string,
+            bulk_apply_proxy_map_via_settings as _tile_bulk_apply_proxy_map_via_settings,
+            force_import_settings_into_extension as _tile_force_import_settings_into_extension,
+            input_proxy_from_ui as _tile_input_proxy_from_ui,
+            bulk_input_proxy_from_ui as _tile_bulk_input_proxy_from_ui,
+            test_proxy_connection as _tile_test_proxy_connection,
+            analyze_profile_proxy_status as _tile_analyze_profile_proxy_status,
+            get_profiles_with_proxy as _tile_get_profiles_with_proxy,
+            get_profiles_without_proxy as _tile_get_profiles_without_proxy,
+            smart_configure_proxy as _tile_smart_configure_proxy,
+            bulk_smart_configure_proxy as _tile_bulk_smart_configure_proxy,
+            get_proxy_from_profile_settings as _tile_get_proxy_from_profile_settings
+        )
         from core.tiles.tile_session_management import clear_profile_name_cache as _tile_clear_profile_name_cache, clear_existing_proxy_data as _tile_clear_existing_proxy_data
         from core.tiles.tile_automation import launch_chrome_profile as _tile_launch_chrome_profile
         from core.tiles.tile_livestream import run_livestream_profiles as _tile_run_livestream_profiles
@@ -69,29 +117,9 @@ except Exception:
         from core.tiles.tile_profile_path import get_profile_path as _tile_get_profile_path
 # Email verification removed
 
-# Import captcha solver
-try:
-    from .captcha_solver import TikTokCaptchaSolver
-    CAPTCHA_SOLVER_AVAILABLE = True
-except ImportError:
-    try:
-        from captcha_solver import TikTokCaptchaSolver
-        CAPTCHA_SOLVER_AVAILABLE = True
-    except ImportError:
-        CAPTCHA_SOLVER_AVAILABLE = False
-        print("[CAPTCHA] Captcha solver not available")
-
-# Import native OMOcaptcha solver (no WebDriver needed)
-try:
-    from .native_omocaptcha_solver import NativeOMOcaptchaSolver
-    NATIVE_CAPTCHA_SOLVER_AVAILABLE = True
-except ImportError:
-    try:
-        from native_omocaptcha_solver import NativeOMOcaptchaSolver
-        NATIVE_CAPTCHA_SOLVER_AVAILABLE = True
-    except ImportError:
-        NATIVE_CAPTCHA_SOLVER_AVAILABLE = False
-        print("[CAPTCHA] Native captcha solver not available")
+# Captcha solver removed - using OMOcaptcha extension instead
+CAPTCHA_SOLVER_AVAILABLE = False
+NATIVE_CAPTCHA_SOLVER_AVAILABLE = False
 
 # Import GPM flags configuration
 gpm_config = None
@@ -150,106 +178,18 @@ class ChromeProfileManager:
             pass
         return ''
 
-    def _get_omocaptcha_extension_id_override(self):
-        # Read override from config/env to pin exact extension id
-        try:
-            if hasattr(self, 'config') and self.config is not None and self.config.has_section('CAPTCHA'):
-                ext_id = (self.config.get('CAPTCHA', 'omocaptcha_extension_id', fallback='') or '').strip()
-                if ext_id:
-                    return ext_id
-        except Exception:
-            pass
-        try:
-            ext_id = (os.environ.get('OMO_EXTENSION_ID') or '').strip()
-            if ext_id:
-                return ext_id
-        except Exception:
-            pass
-        return ''
+    # Thin wrappers delegating to tiles
+    def is_profile_in_use(self, profile_name_or_path):
+        from core.tiles.tile_profile_management import is_profile_in_use as _tile_is_profile_in_use
+        return _tile_is_profile_in_use(self, profile_name_or_path)
 
     def _find_omocaptcha_extension_id(self, profile_path):
-        try:
-            override = self._get_omocaptcha_extension_id_override()
-            if override:
-                # If override is provided, prefer it (even if folders not present yet)
-                return override
-            import json as _json
-            # Look in Extensions folders first
-            for base in (os.path.join(profile_path, 'Default', 'Extensions'), os.path.join(profile_path, 'Extensions')):
-                if os.path.exists(base):
-                    for ext_id in os.listdir(base):
-                        ext_path = os.path.join(base, ext_id)
-                        if not os.path.isdir(ext_path):
-                            continue
-                        versions = [d for d in os.listdir(ext_path) if os.path.isdir(os.path.join(ext_path, d))]
-                        for ver in versions:
-                            manifest_path = os.path.join(ext_path, ver, 'manifest.json')
-                            if os.path.exists(manifest_path):
-                                try:
-                                    with open(manifest_path, 'r', encoding='utf-8') as f:
-                                        manifest = _json.load(f)
-                                    name = str(manifest.get('name', '')).lower()
-                                    if 'omo' in name and 'captcha' in name:
-                                        return ext_id
-                                except Exception:
-                                    pass
-            # Try Preferences fallback
-            for prefs_name in (os.path.join(profile_path, 'Default', 'Preferences'), os.path.join(profile_path, 'Preferences')):
-                if os.path.exists(prefs_name):
-                    try:
-                        with open(prefs_name, 'r', encoding='utf-8') as f:
-                            prefs = _json.load(f)
-                        settings = prefs.get('extensions', {}).get('settings', {})
-                        for ext_id, data in settings.items():
-                            m = data.get('manifest', {})
-                            name = str(m.get('name', '')).lower()
-                            if 'omo' in name and 'captcha' in name:
-                                return ext_id
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-        return None
+        from core.tiles.tile_extension_management import find_omocaptcha_extension_id as _tile_find_omo
+        return _tile_find_omo(self, profile_path)
 
     def _inject_omocaptcha_key_via_driver(self, driver, profile_path, ext_id=None):
-        try:
-            api_key = self._get_omocaptcha_api_key_from_config()
-            if not api_key:
-                return False
-            ext_id = ext_id or self._find_omocaptcha_extension_id(profile_path)
-            if not ext_id:
-                print('[WARNING] [OMO] Extension ID not found; cannot inject key via CDP')
-                return False
-            # Try common entry pages of the extension
-            for page in ('index.html','options.html','home.html','settings.html','popup.html'):
-                try:
-                    url = f"chrome-extension://{ext_id}/{page}"
-                    driver.get(url)
-                    time.sleep(1.5)
-                    break
-                except Exception:
-                    continue
-            try:
-                # Populate both local and sync storage to maximize compatibility
-                driver.execute_script(
-                    "chrome.storage.local.set({apiKey: arguments[0], api_key: arguments[0], omocaptcha_api_key: arguments[0]});"
-                    "chrome.storage.sync && chrome.storage.sync.set({apiKey: arguments[0], api_key: arguments[0], omocaptcha_api_key: arguments[0]});",
-                    api_key
-                )
-                print('[SUCCESS] [OMO] Injected API key into chrome.storage (local/sync) via extension page')
-                return True
-            except Exception as e:
-                try:
-                    # Fallback: localStorage
-                    driver.execute_script("localStorage.setItem('apiKey', arguments[0]); localStorage.setItem('omocaptcha_api_key', arguments[0]); localStorage.setItem('api_key', arguments[0]);", api_key)
-                    print('[SUCCESS] [OMO] Injected API key into localStorage (fallback)')
-                    return True
-                except Exception as ee:
-                    print(f"[ERROR] [OMO] Injection via driver failed: {ee}")
-            return False
-        except Exception as e:
-            print(f"[ERROR] [OMO] Unexpected error injecting key: {e}")
-            return False
+        from core.tiles.tile_extension_management import inject_omocaptcha_key_via_driver as _tile_inject_omo
+        return _tile_inject_omo(self, driver, profile_path, ext_id)
 
     # Profile
     def create_profile_directory(self): return _tile_create_profile_directory(self)
@@ -327,6 +267,20 @@ class ChromeProfileManager:
 
     # Proxy
     def _set_profile_proxy(self, profile_name, proxy_string): return _tile_set_profile_proxy(self, profile_name, proxy_string)
+    def _get_switchyomega_settings_path(self, profile_name): return _tile_get_switchyomega_settings_path(self, profile_name)
+    def apply_proxy_via_settings(self, profile_name, proxy_config): return _tile_apply_proxy_via_settings(self, profile_name, proxy_config)
+    def apply_proxy_via_settings_string(self, profile_name, proxy_string): return _tile_apply_proxy_via_settings_string(self, profile_name, proxy_string)
+    def bulk_apply_proxy_map_via_settings(self, profile_to_proxy_map): return _tile_bulk_apply_proxy_map_via_settings(self, profile_to_proxy_map)
+    def force_import_settings_into_extension(self, profile_name): return _tile_force_import_settings_into_extension(self, profile_name)
+    def input_proxy_from_ui(self, profile_name, proxy_string): return _tile_input_proxy_from_ui(self, profile_name, proxy_string)
+    def bulk_input_proxy_from_ui(self, profile_list, proxy_string): return _tile_bulk_input_proxy_from_ui(self, profile_list, proxy_string)
+    def test_proxy_connection(self, proxy_string): return _tile_test_proxy_connection(self, proxy_string)
+    def analyze_profile_proxy_status(self, profile_name): return _tile_analyze_profile_proxy_status(self, profile_name)
+    def get_profiles_with_proxy(self): return _tile_get_profiles_with_proxy(self)
+    def get_profiles_without_proxy(self): return _tile_get_profiles_without_proxy(self)
+    def smart_configure_proxy(self, profile_name, proxy_string): return _tile_smart_configure_proxy(self, profile_name, proxy_string)
+    def bulk_smart_configure_proxy(self, profile_list, proxy_string): return _tile_bulk_smart_configure_proxy(self, profile_list, proxy_string)
+    def get_proxy_from_profile_settings(self, profile_name): return _tile_get_proxy_from_profile_settings(self, profile_name)
 
     # Session/cookie
     def _clear_profile_name_cache(self, profile_path): return _tile_clear_profile_name_cache(self, profile_path)
@@ -360,6 +314,14 @@ class ChromeProfileManager:
     # Cleanup: clear browsing history only (keep passwords/cache)
     def clear_browsing_history(self, profile_names):
         return _tile_clear_browsing_history(self, profile_names)
+    
+    def start_daily_history_cleanup(self, hour: int = 3, minute: int = 0, profiles=None, jitter_sec: int = 90):
+        from core.tiles.tile_cleanup import start_daily_history_cleanup as _tile_start_cleanup
+        return _tile_start_cleanup(self, hour, minute, profiles, jitter_sec)
+    
+    def stop_daily_history_cleanup(self):
+        from core.tiles.tile_cleanup import stop_daily_history_cleanup as _tile_stop_cleanup
+        return _tile_stop_cleanup(self)
 
     def run_livestream_advanced(self, profile_names, start_url,
                                 auto_out_minutes, replace_delay_seconds, max_viewers, hidden,
@@ -1429,179 +1391,12 @@ class ChromeProfileManager:
             print(f"[FLAG-REMOVAL] Error removing flags: {e}")
     
     def _enforce_chrome_policies(self) -> None:
-        """Thiết lập Chrome Enterprise Policies ở HKCU để cưỡng chế tắt Password Manager/AutoSignIn.
-        Không cần quyền admin (HKCU). Áp dụng cho mọi phiên bản launch (native/WebDriver).
-        """
-        try:
-            import winreg
-            policy_paths = [
-                r"Software\Policies\Google\Chrome",
-                r"Software\Policies\Chromium"
-            ]
-            for policy_path in policy_paths:
-                for root in (winreg.HKEY_CURRENT_USER,):
-                    try:
-                        key = winreg.CreateKeyEx(root, policy_path, 0, winreg.KEY_SET_VALUE)
-                        # 0 = disabled/false
-                        winreg.SetValueEx(key, "PasswordManagerEnabled", 0, winreg.REG_DWORD, 0)
-                        winreg.SetValueEx(key, "CredentialsEnableService", 0, winreg.REG_DWORD, 0)
-                        winreg.SetValueEx(key, "AutoSignInAllowed", 0, winreg.REG_DWORD, 0)
-                        winreg.SetValueEx(key, "AutofillAddressEnabled", 0, winreg.REG_DWORD, 0)
-                        winreg.SetValueEx(key, "AutofillCreditCardEnabled", 0, winreg.REG_DWORD, 0)
-                        winreg.SetValueEx(key, "PasswordLeakDetectionEnabled", 0, winreg.REG_DWORD, 0)
-                        winreg.CloseKey(key)
-                        print(f"[POLICY] Applied policies at HKCU\\{policy_path}")
-                    except Exception as _hkcu_err:
-                        print(f"[POLICY] Could not write HKCU policies at {policy_path}: {_hkcu_err}")
-        except Exception as _e:
-            print(f"[POLICY] Policy enforcement failed: {_e}")
+        from core.tiles.tile_privacy import enforce_chrome_policies as _tile_enforce_policies
+        return _tile_enforce_policies(self)
 
     def _prelaunch_hardening(self, profile_path: str, language: str = None) -> None:
-        """Harden profile prefs and local state to reduce Google beacons and automation signals.
-        - Writes Default/Preferences: intl.accept_languages, signin, google, gcm, safebrowsing
-        - Scrubs Local State 'google' block to avoid GCM registrations
-        """
-        try:
-            import json as _json
-            os.makedirs(os.path.join(profile_path, 'Default'), exist_ok=True)
-
-            # 1) Update Preferences for all profile directories (Default, Profile 1, Profile 2, ...)
-            profile_dirs = []
-            root = os.path.join(profile_path)
-            try:
-                for name in os.listdir(root):
-                    if name.lower() == 'default' or name.lower().startswith('profile'):
-                        profile_dirs.append(os.path.join(root, name))
-            except Exception:
-                profile_dirs = [os.path.join(profile_path, 'Default')]
-
-            for prof_dir in profile_dirs:
-                prefs_path = os.path.join(prof_dir, 'Preferences')
-                prefs_obj = None
-                if os.path.exists(prefs_path):
-                    try:
-                        with open(prefs_path, 'r', encoding='utf-8') as pf:
-                            content = pf.read().strip()
-                            prefs_obj = _json.loads(content) if content else {}
-                    except Exception:
-                        prefs_obj = {}
-                else:
-                    prefs_obj = {}
-
-                if isinstance(prefs_obj, dict):
-                    if language:
-                        intl = prefs_obj.get('intl', {})
-                        intl['accept_languages'] = language
-                        prefs_obj['intl'] = intl
-
-                    # Disable Google signin, GCM beacons, and SafeBrowsing reporting
-                    prefs_obj['google'] = {}
-                    prefs_obj['signin'] = {"allowed": False}
-                    gcm = prefs_obj.get('gcm', {})
-                    gcm['product_category_for_subtypes'] = ""
-                    gcm['wake_from_idle'] = False
-                    prefs_obj['gcm'] = gcm
-                    sb = prefs_obj.get('safebrowsing', {})
-                    sb['enabled'] = False
-                    sb['scout_reporting_enabled_when_deprecated'] = False
-                    prefs_obj['safebrowsing'] = sb
-
-                    # Disable Autofill & form data
-                    autofill = prefs_obj.get('autofill', {})
-                    autofill['enabled'] = False
-                    autofill['profile_enabled'] = False
-                    autofill['credit_card_enabled'] = False
-                    prefs_obj['autofill'] = autofill
-
-                    # Ensure minimal search config and disable omnibox
-                    search_block = prefs_obj.get('search', {})
-                    search_block['engine_forice'] = {"made_by_user": True}
-                    prefs_obj['search'] = search_block
-                    omnibox = prefs_obj.get('omnibox', {})
-                    omnibox['suggestion_enabled'] = False
-                    omnibox['suppress_suggestions'] = True
-                    prefs_obj['omnibox'] = omnibox
-
-                    # Reduce client hints / hints to Google domains
-                    prefs_obj.setdefault('privacy_sandbox', {})
-                    ch = prefs_obj.get('client_hints', {})
-                    ch['enabled'] = False
-                    prefs_obj['client_hints'] = ch
-
-                    session_block = prefs_obj.get('session', {})
-                    session_block['restore_on_startup'] = 1
-                    session_block['startup_urls'] = []
-                    prefs_obj['session'] = session_block
-
-                    profile_block = prefs_obj.get('profile', {})
-                    profile_block['exit_type'] = 'Normal'
-                    profile_block['password_manager_enabled'] = False
-                    prefs_obj['profile'] = profile_block
-
-                    # Disable credentials services & autosignin
-                    prefs_obj['credentials_enable_service'] = False
-                    prefs_obj['credentials_enable_autosignin'] = False
-
-                    try:
-                        with open(prefs_path, 'w', encoding='utf-8') as pfw:
-                            _json.dump(prefs_obj, pfw, ensure_ascii=False, indent=2)
-                        print(f"[PRIVACY] [HARDEN] Preferences updated in: {prefs_path}")
-                    except Exception as _pw:
-                        print(f"[WARNING] [HARDEN] Could not write {prefs_path}: {_pw}")
-
-            # 2) Update Local State: drop 'google' block to avoid background registrations
-            local_state_path = os.path.join(profile_path, 'Local State')
-            if os.path.exists(local_state_path):
-                try:
-                    with open(local_state_path, 'r', encoding='utf-8') as lf:
-                        ls_content = lf.read().strip()
-                        if ls_content:
-                            ls = _json.loads(ls_content)
-                        else:
-                            ls = {}
-                except Exception:
-                    ls = {}
-
-                if 'google' in ls:
-                    try:
-                        del ls['google']
-                    except Exception:
-                        pass
-                # Remove GCM/invalidations blocks if present to stop background registrations
-                for _k in ('gcm', 'invalidation', 'invalidations'):
-                    if _k in ls:
-                        try:
-                            del ls[_k]
-                        except Exception:
-                            pass
-
-                with open(local_state_path, 'w', encoding='utf-8') as lfw:
-                    _json.dump(ls, lfw, ensure_ascii=False)
-
-            # Xóa artefacts phiên to không còn gì to khôi phục
-            try:
-                import glob, shutil as _shutil
-                default_dir = os.path.join(profile_path, 'Default')
-                sessions_dir = os.path.join(default_dir, 'Sessions')
-                if os.path.isdir(sessions_dir):
-                    _shutil.rmtree(sessions_dir, ignore_errors=True)
-                remove_patterns = [
-                    'Current Session', 'Current Tabs', 'Last Session', 'Last Tabs',
-                    'Sessions*', 'Tabs_*', 'Session_*'
-                ]
-                for pat in remove_patterns:
-                    for fp in glob.glob(os.path.join(default_dir, pat)):
-                        try:
-                            if os.path.isdir(fp):
-                                _shutil.rmtree(fp, ignore_errors=True)
-                            else:
-                                os.remove(fp)
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-        except Exception as _e:
-            print(f"[WARNING] [HARDEN] No thể harden prefs/local state: {_e}")
+        from core.tiles.tile_privacy import prelaunch_hardening as _tile_pre_harden
+        return _tile_pre_harden(self, profile_path, language)
     
     def launch_chrome_profile(self, profile_name, hidden=True, auto_login=False, login_data=None, start_url=None, optimized_mode=False, ultra_low_memory=False):
         """Khởi động Chrome with profile cụ thể
@@ -1636,35 +1431,35 @@ class ChromeProfileManager:
             try:
                 # Skip kill for livestream-like launches (start_url provided and not auto_login)
                 skip_kill = bool(start_url and start_url.strip() and not auto_login)
-                # But if this profile is already in use (lock/DevToolsActivePort), force kill to free it
-                try:
-                    _running_marker = os.path.join(profile_path, 'DevToolsActivePort')
-                    _has_lock = any(name.startswith('Singleton') for name in os.listdir(profile_path) if os.path.isfile(os.path.join(profile_path, name)))
-                except Exception:
-                    _running_marker = None
-                    _has_lock = False
-                if skip_kill and ((_running_marker and os.path.exists(_running_marker)) or _has_lock):
-                    print("[LAUNCH] Profile appears in-use; overriding skip and killing Chrome for this profile")
-                    skip_kill = False
+                
+                # ✅ LIVESTREAM: Cho phép reuse profile đang chạy
+                # Nếu profile đang chạy, Chrome sẽ tự động reuse instance đó
+                # Không cần check is_profile_in_use vì Chrome handle được
+                if skip_kill and self.is_profile_in_use(profile_path):
+                    print(f"[LIVESTREAM] [REUSE] Profile {profile_name} đang chạy, Chrome sẽ reuse instance này")
+                    # Không return error, tiếp tục launch (Chrome sẽ reuse)
+                
                 if not skip_kill:
                     self._kill_chrome_processes()
                 else:
                     print(f"[LIVESTREAM] [CONCURRENT] Skipping kill_chrome_processes to allow concurrent launches")
             except Exception:
                 print("[WARNING] [LAUNCH] kill_chrome_processes failed; continuing")
-            # Cleanup leftover lock/marker files that prevent launching
-            try:
-                for _fname in ('DevToolsActivePort','SingletonLock','SingletonCookie','SingletonSocket','RunningChromeVersion'):
-                    for _base in (profile_path, os.path.join(profile_path, 'Default')):
-                        _fpath = os.path.join(_base, _fname)
-                        if os.path.exists(_fpath):
-                            try:
-                                os.remove(_fpath)
-                                print(f"[LAUNCH] Removed leftover file: {_fpath}")
-                            except Exception:
-                                pass
-            except Exception:
-                pass
+            # Do NOT cleanup lock files in livestream mode; they indicate an active profile
+            if not skip_kill:
+                # Only cleanup markers when we actually intend to relaunch after force-kill
+                try:
+                    for _fname in ('DevToolsActivePort','SingletonLock','SingletonCookie','SingletonSocket','RunningChromeVersion'):
+                        for _base in (profile_path, os.path.join(profile_path, 'Default')):
+                            _fpath = os.path.join(_base, _fname)
+                            if os.path.exists(_fpath):
+                                try:
+                                    os.remove(_fpath)
+                                    print(f"[LAUNCH] Removed leftover file: {_fpath}")
+                                except Exception:
+                                    pass
+                except Exception:
+                    pass
             
             # Do not clean cache in any mode (user requested to preserve all data)
             
@@ -1782,28 +1577,49 @@ class ChromeProfileManager:
                 if hidden:
                     is_livestream_like = bool(start_url and start_url.strip() and not auto_login)
                     if is_livestream_like:
-                        # Stealth-hidden: cửa sổ thật, nhỏ, đặt ngoài màn hình + chống throttling/occlusion
-                        chrome_options.add_argument("--window-size=480,360")
+                        # 🎭 STEALTH MODE: Fake headless detection
+                        # Chrome chạy ẩn (minimize) nhưng TikTok nghĩ là browser bình thường
+                        
+                        # ✅ Cửa sổ minimize (ẩn thật sự)
+                        chrome_options.add_argument("--start-minimized")
+                        chrome_options.add_argument("--window-size=1920,1080")  # Size bình thường để fake
                         chrome_options.add_argument("--window-position=-2000,0")
+                        
+                        # 🎭 ANTI-DETECTION: Fake headless properties
+                        # Override navigator.webdriver = false
+                        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                        chrome_options.add_experimental_option('useAutomationExtension', False)
+                        
+                        # Fake user agent (không có headless keyword)
+                        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                        
                         # Giữ render khi bị occluded/minimized
                         chrome_options.add_argument("--disable-background-timer-throttling")
                         chrome_options.add_argument("--disable-backgrounding-occluded-windows")
                         chrome_options.add_argument("--disable-renderer-backgrounding")
                         chrome_options.add_argument("--disable-features=CalculateNativeWinOcclusion,TabHoverCards")
-                        # Tối ưu RAM/CPU an toàn cho livestream
+                        
+                        # Fake permissions (như browser thật)
+                        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+                        
+                        # Tối ưu RAM/CPU
                         chrome_options.add_argument("--renderer-process-limit=4")
                         chrome_options.add_argument("--disable-site-isolation-trials")
                         chrome_options.add_argument("--enable-low-end-device-mode")
                         chrome_options.add_argument("--autoplay-policy=no-user-gesture-required")
-                        # Dùng ANGLE D3D11 ổn định GPU trên Windows
+                        
+                        # GPU rendering (quan trọng cho video)
                         chrome_options.add_argument("--use-angle=d3d11")
-                        print("[DISPLAY] [LAUNCH] Stealth-hidden window (no headless) for livestream")
+                        chrome_options.add_argument("--enable-gpu-rasterization")
+                        chrome_options.add_argument("--enable-zero-copy")
+                        
+                        print("[STEALTH] [LAUNCH] 🎭 Stealth mode: Minimize + Anti-detection (TikTok nghĩ là browser thật)")
                     if not is_livestream_like:
                         # Không phải livestream: dùng headless thật để tiết kiệm tài nguyên
                         chrome_options.add_argument("--headless=new")
                         chrome_options.add_argument("--window-size=1366,768")
                         chrome_options.add_argument("--window-position=-2000,0")
-                        print("[DISPLAY] [LAUNCH] Headless mode enabled (hidden)")
+                    print("[DISPLAY] [LAUNCH] Headless mode enabled (hidden)")
             except Exception as _herr:
                 print(f"[WARNING] [LAUNCH] Could not set hidden/headless flags: {_herr}")
             # antidetect = custom_settings.get('antidetect', {})
@@ -1933,20 +1749,69 @@ class ChromeProfileManager:
             # chrome_options.add_argument("--restore-last-session=false")
             # chrome_options.add_argument("--new-tab")
 
-            # Áp dụng proxy from sw.raw_proxy (if have, dạng user:pass@host:port or host:port)
-            raw_proxy = (sw.get('raw_proxy') or '').strip()
-            if raw_proxy:
+            # ✅ Áp dụng proxy TRỰC TIẾP từ profile_settings.json (không qua extension)
+            proxy_string = _tile_get_proxy_from_profile_settings(self, profile_name)
+            proxy_auth_ext_dir = None  # Declare biến để dùng sau
+            
+            if proxy_string:
                 try:
-                    # Hỗ trợ cả socks5/http: prefix if người dùng fill
-                    if '://' in raw_proxy:
-                        proxy_url = raw_proxy
+                    # Parse proxy string: http://server:port:user:pass hoặc socks5://server:port:user:pass
+                    if '://' in proxy_string:
+                        parts = proxy_string.split('://', 1)
+                        scheme = parts[0].lower()  # http hoặc socks5
+                        rest = parts[1]
                     else:
-                        # Mặc định http
-                        proxy_url = f"http://{raw_proxy}"
+                        scheme = 'http'
+                        rest = proxy_string
+                    
+                    # Parse server:port:user:pass
+                    rest_parts = rest.split(':')
+                    server = rest_parts[0]
+                    port = rest_parts[1] if len(rest_parts) > 1 else '8080'
+                    username = rest_parts[2] if len(rest_parts) > 2 else ''
+                    password = rest_parts[3] if len(rest_parts) > 3 else ''
+                    
+                    # Build proxy URL cho --proxy-server flag
+                    # ⚠️ QUAN TRỌNG: Chrome KHÔNG hỗ trợ credentials trong --proxy-server
+                    # Chỉ dùng server:port, credentials sẽ được handle bởi extension (giống GPM)
+                    proxy_url = f"{scheme}://{server}:{port}"
+                    
                     chrome_options.add_argument(f"--proxy-server={proxy_url}")
-                    print(f"[NETWORK] [PROXY] Done áp dụng proxy: {proxy_url}")
+                    print(f"[NETWORK] [PROXY] ✅ Áp dụng proxy: {scheme}://{server}:{port}")
+                    
+                    # ✅ Nếu có username/password, tạo extension để tự động điền (giống GPM)
+                    if username and password:
+                        print(f"[NETWORK] [PROXY]   Username: {username}")
+                        print(f"[NETWORK] [PROXY]   Password: {'*' * len(password)}")
+                        
+                        try:
+                            # Tạo proxy auth extension (giống GPM) - sẽ được add vào allowlist sau
+                            proxy_auth_ext_dir = self._create_proxy_auth_extension(username, password, profile_path)
+                            if proxy_auth_ext_dir and os.path.exists(proxy_auth_ext_dir):
+                                print(f"[NETWORK] [PROXY] ✅ Created proxy auth extension: {proxy_auth_ext_dir}")
+                                print(f"[NETWORK] [PROXY] Extension will be added to allowlist")
+                            else:
+                                print(f"[WARNING] [PROXY] Extension not created, Chrome will show auth popup")
+                        except Exception as ext_err:
+                            print(f"[WARNING] [PROXY] Could not create proxy auth extension: {ext_err}")
+                            print(f"[WARNING] [PROXY] Chrome will show auth popup - please enter credentials manually")
                 except Exception as _pe:
-                    print(f"[WARNING] [PROXY] No áp dụng get proxy: {_pe}")
+                    print(f"[WARNING] [PROXY] Không thể áp dụng proxy từ profile_settings.json: {_pe}")
+            else:
+                # Fallback: Thử đọc từ sw.raw_proxy (GPM settings) nếu không có trong profile_settings.json
+                raw_proxy = (sw.get('raw_proxy') or '').strip()
+                if raw_proxy:
+                    try:
+                        # Hỗ trợ cả socks5/http: prefix if người dùng fill
+                        if '://' in raw_proxy:
+                            proxy_url = raw_proxy
+                        else:
+                            # Mặc định http
+                            proxy_url = f"http://{raw_proxy}"
+                        chrome_options.add_argument(f"--proxy-server={proxy_url}")
+                        print(f"[NETWORK] [PROXY] Áp dụng proxy từ GPM settings: {proxy_url}")
+                    except Exception as _pe:
+                        print(f"[WARNING] [PROXY] Không thể áp dụng proxy từ GPM settings: {_pe}")
             
             # Decide configuration based on login flow
             def _is_login_like_url(url: str) -> bool:
@@ -2002,22 +1867,80 @@ class ChromeProfileManager:
                     except Exception:
                         so_version_dir = None
 
-                # Build allowlist of extensions (SwitchyOmega + title extension)
+                # Build allowlist of extensions (SwitchyOmega + title extension + OMOcaptcha + Proxy Auth)
                 allowlist = []
                 if so_version_dir and os.path.exists(so_version_dir):
                     allowlist.append(so_version_dir)
                 if title_ext_path and os.path.exists(title_ext_path):
                     allowlist.append(title_ext_path)
+                
+                # Add proxy auth extension if created
+                try:
+                    if 'proxy_auth_ext_dir' in locals() and proxy_auth_ext_dir and os.path.exists(proxy_auth_ext_dir):
+                        allowlist.append(proxy_auth_ext_dir)
+                        print(f"[NETWORK] [PROXY-AUTH] Added proxy auth extension to allowlist: {proxy_auth_ext_dir}")
+                except Exception:
+                    pass
+                
+                # Add OMOcaptcha extension if installed
+                try:
+                    print(f"[DEBUG] [LAUNCH] Checking for OMOcaptcha extension in profile: {profile_name}")
+                    from core.tiles.tile_omocaptcha import get_omocaptcha_extension_path
+                    omo_ext_path = get_omocaptcha_extension_path(self, profile_name)
+                    print(f"[DEBUG] [LAUNCH] OMOcaptcha path returned: {omo_ext_path}")
+                    
+                    if omo_ext_path:
+                        if os.path.exists(omo_ext_path):
+                            allowlist.append(omo_ext_path)
+                            print(f"✅ [EXTENSION] [LAUNCH] OMOcaptcha extension added to allowlist: {omo_ext_path}")
+                        else:
+                            print(f"⚠️ [WARNING] [LAUNCH] OMOcaptcha path does not exist: {omo_ext_path}")
+                    else:
+                        print(f"⚠️ [WARNING] [LAUNCH] OMOcaptcha extension not found in profile")
+                except Exception as e:
+                    import traceback
+                    print(f"❌ [ERROR] [LAUNCH] Could not check OMOcaptcha extension: {e}")
+                    print(f"[DEBUG] Traceback: {traceback.format_exc()}")
 
                 if allowlist:
+                    # Validate all paths exist before using them
+                    valid_allowlist = []
+                    for ext_path in allowlist:
+                        if ext_path and os.path.exists(ext_path):
+                            valid_allowlist.append(ext_path)
+                        else:
+                            print(f"⚠️ [WARNING] [LAUNCH] Extension path does not exist, skipping: {ext_path}")
+                    
+                    if not valid_allowlist:
+                        print(f"⚠️ [WARNING] [LAUNCH] No valid extensions in allowlist")
+                    else:
                     # Load extensions like GPM Login (cleaner approach)
-                    paths_arg = ",".join(allowlist)
-                    try:
-                        # Chỉ load extension, không disable others (giống GPM)
-                        chrome_options.add_argument(f"--load-extension={paths_arg}")
-                        print(f"[SECURITY] [LAUNCH] Loading extensions like GPM Login")
-                    except Exception:
-                        pass
+                        paths_arg = ",".join(valid_allowlist)
+                        print(f"[DEBUG] [LAUNCH] Allowlist has {len(valid_allowlist)} extensions:")
+                        for idx, ext_path in enumerate(valid_allowlist, 1):
+                            # Print full path, ensure it's not truncated
+                            ext_name = os.path.basename(ext_path)
+                            print(f"  {idx}. {ext_path}")
+                            print(f"      (name: {ext_name})")
+                        
+                        try:
+                            # Chỉ load extension, không disable others (giống GPM)
+                            chrome_options.add_argument(f"--load-extension={paths_arg}")
+                            print(f"✅ [SECURITY] [LAUNCH] Added --load-extension flag with {len(valid_allowlist)} extensions")
+                            
+                            # Print full argument but split if too long for readability
+                            if len(paths_arg) > 200:
+                                print(f"[DEBUG] [LAUNCH] Full argument (truncated for display): --load-extension={paths_arg[:200]}...")
+                                print(f"[DEBUG] [LAUNCH] Full argument length: {len(paths_arg)} characters")
+                            else:
+                                print(f"[DEBUG] [LAUNCH] Full argument: --load-extension={paths_arg}")
+                        
+                        except Exception as e:
+                            print(f"❌ [ERROR] [LAUNCH] Failed to add --load-extension: {e}")
+                            import traceback
+                            print(f"[ERROR] [LAUNCH] Traceback: {traceback.format_exc()}")
+                else:
+                    print(f"⚠️ [WARNING] [LAUNCH] Allowlist is empty, no extensions will be loaded")
             except Exception as e:
                 print(f"[WARNING] [LAUNCH] Could not isolate extensions: {e}")
             
@@ -2105,8 +2028,11 @@ class ChromeProfileManager:
             # Nếu mở hiển thị (Starting), KHÔNG dùng WebDriver để tránh ChromeDriver tự chèn --remote-debugging-port=0
             if hidden is False:
                 print(f"[DEBUG] [LAUNCH] Using native launch (visible mode) - keyboard-only autofill available")
+                print(f"[DEBUG] [LAUNCH] Profile path: {profile_path}")
+                print(f"[DEBUG] [LAUNCH] Start URL: {start_url}")
                 try:
                     ok = self._launch_chrome_native_fixed(chrome_options, profile_path, start_url)
+                    print(f"[DEBUG] [LAUNCH] Native launch result: {ok}")
                     if ok:
                         # If native visible and auto_login requested, perform keystroke-based autofill
                         try:
@@ -2167,48 +2093,9 @@ class ChromeProfileManager:
                                                 _pg.press('enter')
                                                 print(f"[AUTOLOGIN] Keyboard-only autofill completed")
                                                 
-                                                # Wait for captcha to appear (10-15 seconds)
-                                                print(f"[CAPTCHA] Waiting for captcha to appear...")
-                                                _time.sleep(12)  # Wait for captcha loading
-                                                
-                                                # Try to solve captcha automatically
-                                                try:
-                                                    print(f"[CAPTCHA] Attempting to solve captcha...")
-                                                    
-                                                    # Take screenshot to detect captcha
-                                                    import pyautogui as _pg2
-                                                    screenshot = _pg2.screenshot()
-                                                    
-                                                    # Try to solve captcha with native OMOcaptcha solver (no WebDriver needed)
-                                                    if NATIVE_CAPTCHA_SOLVER_AVAILABLE:
-                                                        print(f"[CAPTCHA] [NATIVE-OMO] Attempting to solve captcha with OMOcaptcha...")
-                                                        try:
-                                                            # Load API key from config
-                                                            if hasattr(self, 'config') and self.config.has_section('CAPTCHA'):
-                                                                api_key = self.config.get('CAPTCHA', 'omocaptcha_api_key', fallback=None)
-                                                                if api_key and api_key != 'YOUR_OMOCAPTCHA_API_KEY_HERE':
-                                                                    print(f"[CAPTCHA] [NATIVE-OMO] Initializing native solver...")
-                                                                    solver = NativeOMOcaptchaSolver(api_key)
-                                                                    success = solver.solve_captcha()
-                                                                    if success:
-                                                                        print(f"[SUCCESS] [CAPTCHA] [NATIVE-OMO] Captcha solved!")
-                                                                        _time.sleep(2)
-                                                                    else:
-                                                                        print(f"[WARNING] [CAPTCHA] [NATIVE-OMO] Failed to solve captcha")
-                                                                else:
-                                                                    print(f"[WARNING] [CAPTCHA] [NATIVE-OMO] No valid API key")
-                                                            else:
-                                                                print(f"[WARNING] [CAPTCHA] [NATIVE-OMO] No [CAPTCHA] section in config")
-                                                        except Exception as solver_err:
-                                                            print(f"[ERROR] [CAPTCHA] [NATIVE-OMO] Error: {solver_err}")
-                                                            import traceback
-                                                            print(f"Traceback: {traceback.format_exc()}")
-                                                    else:
-                                                        print(f"[INFO] [CAPTCHA] Native OMOcaptcha solver not available")
-                                                        print(f"[INFO] [CAPTCHA] Manual solving required")
-                                                    
-                                                except Exception as captcha_err:
-                                                    print(f"[CAPTCHA] Auto-solve failed: {captcha_err}")
+                                                # Captcha will be handled by OMOcaptcha extension automatically
+                                                print(f"[CAPTCHA] OMOcaptcha extension will handle captcha automatically")
+                                                _time.sleep(5)  # Wait for extension to process
                                                 
                                             except Exception as tab_err:
                                                 print(f"[AUTOLOGIN] Tab navigation failed: {tab_err}")
@@ -2251,7 +2138,12 @@ class ChromeProfileManager:
                         return True, "Chrome started (native)"
                     else:
                         print("[ERROR] [LAUNCH] Native visible start failed; not falling back to WebDriver to avoid remote-debugging-port")
-                        return False, "Native start failed (visible). Please retry or check Chrome path."
+                        # Try to get more details about the failure
+                        chrome_path_check = self.get_chrome_path()
+                        if not chrome_path_check:
+                            return False, "Native start failed: Chrome executable not found. Please check Chrome installation."
+                        else:
+                            return False, f"Native start failed (visible). Chrome found at: {chrome_path_check}. Please check logs above for details."
                 except Exception as _ne:
                     print(f"[ERROR] [LAUNCH] Native start failed: {_ne}")
                     return False, "Native start exception (visible)."
@@ -2962,14 +2854,19 @@ try {
                 "(function(){\n"
                 "  const profileName = " + _json.dumps(str(profile_name)) + ";\n"
                 "  const displayName = " + _json.dumps(display_name) + ";\n"
-                "  const prefix = '[' + displayName + '] ';\n"
                 "  \n"
                 "  // Function to update title\n"
                 "  const updateTitle = () => {\n"
                 "    try {\n"
-                "      const currentTitle = document.title || '';\n"
-                "      if (!currentTitle.startsWith(prefix)) {\n"
+                "      let currentTitle = document.title || '';\n"
+                "      // Replace 'GPM Login' with profile name\n"
+                "      currentTitle = currentTitle.replace(/GPM Login/gi, displayName);\n"
+                "      // Add profile name prefix if not already there\n"
+                "      const prefix = displayName + ' | ';\n"
+                "      if (!currentTitle.includes(displayName)) {\n"
                 "        document.title = prefix + currentTitle;\n"
+                "      } else {\n"
+                "        document.title = currentTitle;\n"
                 "      }\n"
                 "    } catch(e) {}\n"
                 "  };\n"
@@ -3054,6 +2951,92 @@ try {
         except Exception as e:
             print(f"[WARNING] [PROFILE-TITLE] Failed to create extension: {e}")
             return ext_dir
+    
+    def _create_proxy_auth_extension(self, username: str, password: str, profile_path: str) -> str:
+        """
+        Create a Chrome extension to handle proxy authentication.
+        Returns absolute extension directory path.
+        
+        Args:
+            username: Proxy username
+            password: Proxy password
+            profile_path: Profile path (for unique extension dir)
+        """
+        import re
+        import json as _json
+        
+        try:
+            # Create extension directory
+            base_dir = os.path.join(os.getcwd(), "extensions")
+            if not os.path.exists(base_dir):
+                os.makedirs(base_dir)
+            
+            # Use profile name for unique extension dir
+            profile_name = os.path.basename(profile_path)
+            safe_name = re.sub(r"[^A-Za-z0-9_\-]", "_", str(profile_name))
+            ext_dir = os.path.join(base_dir, f"ProxyAuth_{safe_name}")
+            
+            if not os.path.exists(ext_dir):
+                os.makedirs(ext_dir)
+            
+            # manifest.json (MV3)
+            manifest_path = os.path.join(ext_dir, "manifest.json")
+            manifest = {
+                "manifest_version": 3,
+                "name": "Proxy Auth Helper",
+                "version": "1.0.0",
+                "description": "Auto-fill proxy authentication",
+                "permissions": [
+                    "webRequest",
+                    "webRequestAuthProvider"
+                ],
+                "host_permissions": [
+                    "<all_urls>"
+                ],
+                "background": {
+                    "service_worker": "background.js"
+                }
+            }
+            
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                _json.dump(manifest, f, ensure_ascii=False, indent=2)
+            
+            # background.js - Handle proxy authentication
+            js_path = os.path.join(ext_dir, "background.js")
+            script = f"""
+// Proxy credentials
+const PROXY_USERNAME = {_json.dumps(username)};
+const PROXY_PASSWORD = {_json.dumps(password)};
+
+// Listen for auth requests
+chrome.webRequest.onAuthRequired.addListener(
+    function(details, callbackFn) {{
+        console.log('[PROXY-AUTH] Authentication required for:', details.url);
+        
+        // Return credentials
+        callbackFn({{
+            authCredentials: {{
+                username: PROXY_USERNAME,
+                password: PROXY_PASSWORD
+            }}
+        }});
+    }},
+    {{ urls: ["<all_urls>"] }},
+    ['asyncBlocking']
+);
+
+console.log('[PROXY-AUTH] Extension loaded. Username:', PROXY_USERNAME);
+"""
+            
+            with open(js_path, "w", encoding="utf-8") as f:
+                f.write(script)
+            
+            print(f"[NETWORK] [PROXY-AUTH] Created proxy auth extension at: {ext_dir}")
+            return ext_dir
+            
+        except Exception as e:
+            print(f"[WARNING] [PROXY-AUTH] Failed to create extension: {e}")
+            return None
 
     def _remove_unsafe_sandbox_flag(self, chrome_options: "Options") -> None:
         """Loại bỏ cờ --no-sandbox khỏi danh sách arguments if have."""
@@ -3354,47 +3337,11 @@ try {
                 try:
                     print(f"🔍 [CAPTCHA] [STEP 1/5] Kiểm tra captcha...")
                     
-                    # Load OMOcaptcha API key từ config
-                    omocaptcha_api_key = None
-                    try:
-                        if hasattr(self, 'config') and self.config.has_section('CAPTCHA'):
-                            omocaptcha_api_key = self.config.get('CAPTCHA', 'omocaptcha_api_key', fallback=None)
-                            if omocaptcha_api_key and omocaptcha_api_key != 'YOUR_OMOCAPTCHA_API_KEY_HERE':
-                                print(f"🔑 [CAPTCHA] [STEP 2/5] API Key loaded: {omocaptcha_api_key[:20]}...{omocaptcha_api_key[-10:]}")
-                                print(f"✅ [CAPTCHA] [OMO] Sử dụng OMOcaptcha API để giải captcha")
-                            else:
-                                print(f"⚠️ [CAPTCHA] [OMO] API key chưa được cấu hình hoặc là placeholder")
-                                print(f"⚠️ [CAPTCHA] Cần thêm API key hợp lệ vào config.ini")
-                                return False
-                    except Exception as config_err:
-                        print(f"❌ [CAPTCHA] [STEP 2/5] Lỗi load config: {config_err}")
-                        import traceback
-                        print(f"Traceback: {traceback.format_exc()}")
-                    
-                    if not omocaptcha_api_key:
-                        print(f"❌ [CAPTCHA] Không có API key, skip captcha solving")
-                        return False
-                    
-                    # Khởi tạo captcha solver với OMOcaptcha API key
-                    print(f"🔧 [CAPTCHA] [STEP 3/5] Khởi tạo captcha solver...")
-                    captcha_solver = TikTokCaptchaSolver(driver, omocaptcha_api_key=omocaptcha_api_key)
-                    
-                    print(f"🎯 [CAPTCHA] [STEP 4/5] Bắt đầu giải captcha...")
-                    success = captcha_solver.solve_captcha()
-                    
-                    print(f"🎯 [CAPTCHA] [STEP 5/5] Kết quả: {'✅ THÀNH CÔNG' if success else '❌ THẤT BẠI'}")
-                    if success:
-                        print(f"[SUCCESS] [CAPTCHA] Đã giải captcha thành công!")
-                    else:
-                        print(f"[INFO] [CAPTCHA] Không phát hiện captcha hoặc đã được giải")
-                    
-                    return success
+                    # Captcha will be handled by OMOcaptcha extension automatically
+                    print(f"[INFO] [CAPTCHA] OMOcaptcha extension will handle captcha automatically")
+                    return True
                 except Exception as e:
-                    print(f"❌ [CAPTCHA] Lỗi khi giải captcha: {e}")
-                    import traceback
-                    print(f"Traceback: {traceback.format_exc()}")
-            else:
-                print(f"[INFO] [CAPTCHA] Captcha solver không khả dụng (CAPTCHA_SOLVER_AVAILABLE=False)")
+                    print(f"[INFO] [CAPTCHA] Extension-based captcha handling: {e}")
             
             # Thử load session data trước
             username_or_email = login_data.get('username', login_data.get('email', ''))
@@ -6334,7 +6281,14 @@ try {
                 chrome_path = self.get_chrome_path()
             if not chrome_path:
                 print("[ERROR] [NATIVE] Chrome executable not found")
+                print("[ERROR] [NATIVE] Tried to find Chrome in:")
+                print("  - GPM browser paths")
+                print("  - Resolved Chrome binary path")
+                print("  - CFT Chrome binary")
+                print("  - get_chrome_path() fallback")
                 return False
+            
+            print(f"[DEBUG] [NATIVE] Using Chrome: {chrome_path}")
 
             # Collect arguments from Options or a plain list
             if hasattr(chrome_options, 'arguments'):
@@ -6352,6 +6306,18 @@ try {
                 str(a) == '--no-first-run' or
                 str(a).startswith('--log-level')
             )]
+            
+            # Clean and validate args - remove None, empty strings, and ensure all are strings
+            cleaned_args = []
+            for arg in args:
+                if arg is None:
+                    continue
+                arg_str = str(arg).strip()
+                if arg_str:
+                    cleaned_args.append(arg_str)
+            args = cleaned_args
+            
+            print(f"[DEBUG] [NATIVE] Args after cleaning: {len(args)} arguments")
 
             # Final normalization via fix_chrome_command
             try:
@@ -6368,8 +6334,10 @@ try {
                 parts = _shlex.split(fixed)
                 if len(parts) > 1:
                     args = parts[1:]
+                    print(f"[DEBUG] [NATIVE] Args after fix_chrome_command: {len(args)} arguments")
             except Exception as _fe:
                 print(f"[COMMAND-FIX] Native fix error: {_fe}")
+                # Continue with args as-is if fix_chrome_command fails
 
             # Append start URL if provided (open desired page on launch)
             if start_url:
@@ -6378,15 +6346,89 @@ try {
                 except Exception:
                     pass
 
+            # Validate Chrome path
+            if not chrome_path or not os.path.exists(chrome_path):
+                print(f"[ERROR] [NATIVE] Chrome executable not found: {chrome_path}")
+                return False
+            
+            # Validate args
+            if not isinstance(args, list):
+                args = []
+            
+            # Build full command for logging
+            full_command = [chrome_path] + args
+            print(f"[DEBUG] [NATIVE] Chrome path: {chrome_path}")
+            print(f"[DEBUG] [NATIVE] Command args count: {len(args)}")
+            if start_url:
+                print(f"[DEBUG] [NATIVE] Start URL: {start_url}")
+
             # Launch visible Chrome natively
-            _subprocess.Popen([chrome_path] + args,
+            try:
+                # Capture stderr temporarily to see if there are any errors
+                import tempfile
+                stderr_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.log')
+                stderr_path = stderr_file.name
+                stderr_file.close()
+                
+                process = _subprocess.Popen(
+                    full_command,
                               stdout=_subprocess.DEVNULL,
-                              stderr=_subprocess.DEVNULL,
-                              creationflags=(_subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0))
-            print("[SUCCESS] [NATIVE] Chrome started (visible) without remote-debugging-port")
-            return True
+                    stderr=open(stderr_path, 'w'),
+                    creationflags=(_subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0)
+                )
+                
+                # Wait a bit to check if process started successfully
+                import time as _time
+                _time.sleep(1.0)  # Tăng thời gian chờ lên 1 giây
+                
+                # Check if process is still running
+                if process.poll() is None:
+                    print("[SUCCESS] [NATIVE] Chrome started (visible) without remote-debugging-port")
+                    print(f"[DEBUG] [NATIVE] Process PID: {process.pid}")
+                    # Clean up stderr file if successful
+                    try:
+                        os.unlink(stderr_path)
+                    except:
+                        pass
+                    return True
+                else:
+                    return_code = process.returncode
+                    print(f"[ERROR] [NATIVE] Chrome process exited immediately with code: {return_code}")
+                    
+                    # Try to read stderr to see what went wrong
+                    try:
+                        with open(stderr_path, 'r') as err_file:
+                            stderr_content = err_file.read()
+                            if stderr_content:
+                                print(f"[ERROR] [NATIVE] Chrome stderr: {stderr_content[:500]}")
+                    except:
+                        pass
+                    finally:
+                        try:
+                            os.unlink(stderr_path)
+                        except:
+                            pass
+                    
+                    return False
+                    
+            except FileNotFoundError as _fnf:
+                print(f"[ERROR] [NATIVE] Chrome executable not found: {chrome_path}")
+                print(f"[ERROR] [NATIVE] FileNotFoundError: {_fnf}")
+                return False
+            except PermissionError as _pe:
+                print(f"[ERROR] [NATIVE] Permission denied when starting Chrome: {_pe}")
+                print(f"[ERROR] [NATIVE] Check if you have permission to execute: {chrome_path}")
+                return False
+            except Exception as _pe:
+                print(f"[ERROR] [NATIVE] Failed to start Chrome process: {_pe}")
+                import traceback
+                print(f"[ERROR] [NATIVE] Traceback: {traceback.format_exc()}")
+                return False
+                
         except Exception as _e:
             print(f"[ERROR] [NATIVE] Launch failed: {_e}")
+            import traceback
+            print(f"[ERROR] [NATIVE] Full traceback: {traceback.format_exc()}")
             return False
 
     def _cleanup_profile_cache(self, profile_path):
@@ -7943,502 +7985,7 @@ try {
             print(f"[ERROR] [PROXY-FIX] Error auto-fixing proxy input: {str(e)}")
             return False, "", f"Error auto-fixing proxy input: {str(e)}"
 
-    def _get_switchyomega_settings_path(self, profile_name):
-        """Return absolute path to SwitchyOmega settings.json for a profile."""
-        profile_path = os.path.join(self.profiles_dir, profile_name)
-        settings_path = os.path.join(
-            profile_path,
-            "Default",
-            "Extensions",
-            "pfnededegaaopdmhkdmcofjmoldfiped",
-            "3.4.1_0",
-            "settings.json",
-        )
-        return settings_path
 
-    def apply_proxy_via_settings(self, profile_name, proxy_config):
-        """
-        Apply proxy by writing SwitchyOmega settings.json directly (no Chrome launch).
-
-        proxy_config keys: proxy_server, proxy_port, username(optional), password(optional), scheme(optional)
-        """
-        try:
-            print(f"💾 [SO-SETTINGS] Writing settings.json for profile: {profile_name}")
-
-            settings_path = self._get_switchyomega_settings_path(profile_name)
-            settings_dir = os.path.dirname(settings_path)
-
-            # Ensure directory exists
-            if not os.path.exists(settings_dir):
-                os.makedirs(settings_dir, exist_ok=True)
-
-            # Load existing settings if exist, else create base
-            settings = {
-                "version": "3.0.0",
-                "profiles": {},
-                "rules": [],
-                "defaultProfileId": "MyProxy",
-            }
-            if os.path.exists(settings_path):
-                try:
-                    with open(settings_path, "r", encoding="utf-8") as f:
-                        existing = json.load(f)
-                        if isinstance(existing, dict):
-                            settings.update(existing)
-                            if "profiles" not in settings:
-                                settings["profiles"] = {}
-                except Exception as e:
-                    print(f"[WARNING] [SO-SETTINGS] Could not read existing settings: {e}")
-
-            scheme = proxy_config.get("scheme", "http") or "http"
-            host = proxy_config.get("proxy_server", "")
-            port = int(proxy_config.get("proxy_port", 0) or 0)
-            username = proxy_config.get("username") or ""
-            password = proxy_config.get("password") or ""
-
-            profile_id = "MyProxy"
-            settings["profiles"][profile_id] = {
-                "name": profile_id,
-                "type": "ProxyProfile",
-                "color": "#ff6b6b",
-                "conditionType": "HostWildcardCondition",
-                "condition": "*",
-                "proxyType": scheme,
-                "scheme": scheme,
-                "host": host,
-                "port": port,
-                "username": username,
-                "password": password,
-                "bypassList": "",
-                "pacUrl": "",
-                "pacScript": "",
-                "singleProxy": {
-                    "scheme": scheme,
-                    "host": host,
-                    "port": port,
-                    "username": username,
-                    "password": password,
-                },
-            }
-
-            # Ensure rule points to profile
-            settings["defaultProfileId"] = profile_id
-            settings["rules"] = [
-                {"conditionType": "HostWildcardCondition", "condition": "*", "profileId": profile_id}
-            ]
-
-            with open(settings_path, "w", encoding="utf-8") as f:
-                json.dump(settings, f, ensure_ascii=False, indent=2)
-
-            print(
-                f"[SUCCESS] [SO-SETTINGS] settings.json updated: {host}:{port} user={username}"
-            )
-            return True, "SwitchyOmega settings updated"
-
-        except Exception as e:
-            print(f"[ERROR] [SO-SETTINGS] Failed to write settings: {e}")
-            return False, f"Failed to write settings: {e}"
-
-    def apply_proxy_via_settings_string(self, profile_name, proxy_string):
-        """Parse proxy string and call apply_proxy_via_settings."""
-        try:
-            parts = proxy_string.strip().split(":")
-            if len(parts) < 2:
-                return False, "Invalid proxy format. Use server:port[:username:password]"
-            proxy_config = {
-                "proxy_server": parts[0].strip(),
-                "proxy_port": int(parts[1].strip()),
-                "username": parts[2].strip() if len(parts) > 2 else "",
-                "password": parts[3].strip() if len(parts) > 3 else "",
-                "scheme": "http",
-            }
-            return self.apply_proxy_via_settings(profile_name, proxy_config)
-        except Exception as e:
-            return False, f"Failed to parse/apply: {e}"
-
-    def bulk_apply_proxy_map_via_settings(self, profile_to_proxy_map):
-        """Apply many proxies to many profiles by editing settings.json files directly.
-
-        profile_to_proxy_map: dict { profile_name: proxy_string }
-        Returns (results: list of {profile, success, message}, success_count)
-        """
-        results = []
-        success_count = 0
-        for profile_name, proxy_string in profile_to_proxy_map.items():
-            try:
-                ok, msg = self.apply_proxy_via_settings_string(profile_name, proxy_string)
-                results.append({"profile": profile_name, "success": ok, "message": msg})
-                if ok:
-                    success_count += 1
-            except Exception as e:
-                results.append({"profile": profile_name, "success": False, "message": str(e)})
-        return results, success_count
-
-    def force_import_settings_into_extension(self, profile_name):
-        """Open SwitchyOmega options for the given profile and import our settings.json via UI.
-
-        This ensures the extension's Local Extension Settings storage reflects the settings file we wrote.
-        """
-        try:
-            from selenium import webdriver
-            from selenium.webdriver.chrome.options import Options
-            from selenium.webdriver.common.by import By
-            from selenium.webdriver.support.ui import WebDriverWait
-            from selenium.webdriver.support import expected_conditions as EC
-
-            settings_path = self._get_switchyomega_settings_path(profile_name)
-            if not os.path.exists(settings_path):
-                return False, f"settings.json not found for profile {profile_name}"
-
-            profile_dir = os.path.join(self.profiles_dir, profile_name)
-            if not os.path.exists(profile_dir):
-                return False, f"Profile '{profile_name}' not found"
-
-            chrome_options = Options()
-            chrome_options.add_argument(f"--user-data-dir={profile_dir}")
-            # chrome_options.add_argument("--no-first-run")
-            chrome_options.add_argument("--no-default-browser-check")
-            chrome_options.add_argument("--disable-popup-blocking")
-
-            driver = webdriver.Chrome(options=chrome_options)
-            wait = WebDriverWait(driver, 20)
-
-            # Read settings to get intended proxy values
-            with open(settings_path, 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-            prof = settings.get('profiles', {}).get('MyProxy') or next(iter(settings.get('profiles', {}).values()), {})
-            host = str(prof.get('host', ''))
-            port = str(prof.get('port', ''))
-            username = str(prof.get('username', ''))
-            password = str(prof.get('password', ''))
-
-            # Go directly to the existing 'proxy' profile page
-            driver.get("chrome-extension://pfnededegaaopdmhkdmcofjmoldfiped/options.html#!/profile/proxy")
-            time.sleep(2)
-
-            # Fill server and port
-            try:
-                server_input = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@ng-model='proxyEditors[scheme].host']")))
-                port_input = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@ng-model='proxyEditors[scheme].port']")))
-                server_input.clear(); server_input.send_keys(host)
-                port_input.clear(); port_input.send_keys(port)
-            except Exception:
-                pass
-
-            # Ensure Advanced panel is visible (to reveal auth/lock)
-            try:
-                adv_toggle = driver.find_element(By.XPATH, "//a[contains(@ng-click,'toggleAdvanced') or contains(.,'Show Advanced') or contains(.,'Advanced')]")
-                if adv_toggle.is_displayed():
-                    adv_toggle.click(); time.sleep(0.5)
-            except Exception:
-                pass
-
-            # Click padlock to show auth fields (if username provided)
-            try:
-                if username:
-                    lock_btn = driver.find_element(By.XPATH, "//button[contains(@class,'btn') and .//span[contains(@class,'glyphicon-lock')] or contains(@ng-click,'toggleAuth') or contains(@ng-click,'auth')]")
-                    lock_btn.click(); time.sleep(0.8)
-                    # Modal appears: fill username/password and save
-                    try:
-                        modal = wait.until(EC.presence_of_element_located((By.XPATH, "//div[contains(@class,'modal-dialog')]")))
-                        user_modal = wait.until(EC.presence_of_element_located((By.XPATH, "//div[contains(@class,'modal-dialog')]//input[@type='text' or @type='email' or @name='username']")))
-                        pass_modal = wait.until(EC.presence_of_element_located((By.XPATH, "//div[contains(@class,'modal-dialog')]//input[@type='password' or @name='password']")))
-                        user_modal.clear(); user_modal.send_keys(username)
-                        pass_modal.clear(); pass_modal.send_keys(password)
-                        # Click Save changes inside modal
-                        save_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//div[contains(@class,'modal-dialog')]//button[contains(., 'Save changes') or contains(., 'Save')]")))
-                        save_btn.click(); time.sleep(0.8)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            # Fill username/password if fields exist
-            try:
-                user_input = driver.find_element(By.XPATH, "//input[@ng-model='proxyEditors[scheme].username']")
-                pass_input = driver.find_element(By.XPATH, "//input[@ng-model='proxyEditors[scheme].password']")
-                user_input.clear(); user_input.send_keys(username)
-                pass_input.clear(); pass_input.send_keys(password)
-            except Exception:
-                pass
-
-            # Click Apply changes (left panel or bottom) and wait for success toast 'Options saved.'
-            try:
-                apply_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Apply changes') or contains(., 'Apply')] | //a[contains(., 'Apply changes')]")))
-                apply_btn.click()
-                # Wait for green success alert
-                wait.until(EC.presence_of_element_located((By.XPATH, "//div[contains(@class,'alert-success') and contains(., 'Options saved')]")))
-            except Exception:
-                pass
-
-            driver.quit()
-            return True, "Settings imported into extension"
-
-        except Exception as e:
-            try:
-                driver.quit()
-            except Exception:
-                pass
-            return False, f"Failed to import into extension: {e}"
-
-    def input_proxy_from_ui(self, profile_name, proxy_string):
-        """
-        Parse proxy string from UI and configure SwitchyOmega
-        Format: server:port:username:password or server:port
-        """
-        try:
-            print(f"[TOOL] [PROXY-INPUT] Parsing proxy string for {profile_name}")
-            
-            # Parse proxy string
-            parts = proxy_string.strip().split(':')
-            
-            if len(parts) < 2:
-                return False, "Invalid proxy format. Use: server:port:username:password"
-            
-            proxy_config = {
-                'proxy_server': parts[0].strip(),
-                'proxy_port': int(parts[1].strip()),
-                'username': parts[2].strip() if len(parts) > 2 else None,
-                'password': parts[3].strip() if len(parts) > 3 else None
-            }
-            
-            print(f"[STATS] [PROXY-INPUT] Parsed config: {proxy_config['proxy_server']}:{proxy_config['proxy_port']}")
-            if proxy_config['username']:
-                print(f"👤 [PROXY-INPUT] Username: {proxy_config['username']}")
-            
-            # Configure SwitchyOmega
-            return self.configure_switchyomega_proxy(profile_name, proxy_config)
-            
-        except ValueError as e:
-            return False, f"Invalid port number: {str(e)}"
-        except Exception as e:
-            return False, f"Error parsing proxy: {str(e)}"
-
-    def bulk_input_proxy_from_ui(self, profile_list, proxy_string):
-        """
-        Apply proxy configuration to multiple profiles
-        """
-        results = []
-        success_count = 0
-        
-        for profile_name in profile_list:
-            try:
-                success, message = self.input_proxy_from_ui(profile_name, proxy_string)
-                results.append({
-                    'profile': profile_name,
-                    'success': success,
-                    'message': message
-                })
-                if success:
-                    success_count += 1
-            except Exception as e:
-                results.append({
-                    'profile': profile_name,
-                    'success': False,
-                    'message': f"Error: {str(e)}"
-                })
-        
-        return results, success_count
-
-    def test_proxy_connection(self, proxy_string):
-        """
-        Test proxy connection before applying
-        """
-        try:
-            print(f"[DEBUG] [PROXY-TEST] Testing proxy connection...")
-            
-            # Parse proxy string
-            parts = proxy_string.strip().split(':')
-            
-            if len(parts) < 2:
-                return False, "Invalid proxy format. Use: server:port:username:password"
-            
-            proxy_server = parts[0].strip()
-            proxy_port = int(parts[1].strip())
-            proxy_username = parts[2].strip() if len(parts) > 2 else None
-            proxy_password = parts[3].strip() if len(parts) > 3 else None
-            
-            # Test connection
-            import requests
-            import socket
-            
-            # Test basic connectivity
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(10)
-            result = sock.connect_ex((proxy_server, proxy_port))
-            sock.close()
-            
-            if result != 0:
-                return False, f"Cannot connect to proxy {proxy_server}:{proxy_port}"
-            
-            # Test HTTP proxy
-            proxies = {
-                'http': f'http://{proxy_server}:{proxy_port}',
-                'https': f'http://{proxy_server}:{proxy_port}'
-            }
-            
-            if proxy_username and proxy_password:
-                proxies['http'] = f'http://{proxy_username}:{proxy_password}@{proxy_server}:{proxy_port}'
-                proxies['https'] = f'http://{proxy_username}:{proxy_password}@{proxy_server}:{proxy_port}'
-            
-            response = requests.get('http://httpbin.org/ip', proxies=proxies, timeout=10)
-            
-            if response.status_code == 200:
-                ip_info = response.json()
-                return True, f"Proxy working! Your IP: {ip_info.get('origin', 'Unknown')}"
-            else:
-                return False, f"Proxy test failed with status: {response.status_code}"
-                
-        except Exception as e:
-            return False, f"Proxy test error: {str(e)}"
-
-    def analyze_profile_proxy_status(self, profile_name):
-        """Analyze if a profile has proxy configured"""
-        try:
-            print(f"[DEBUG] [ANALYZE] Analyzing proxy status for profile: {profile_name}")
-            
-            profile_path = self.get_profile_path(profile_name)
-            if not profile_path or not os.path.exists(profile_path):
-                return False, "Profile not found"
-            
-            extension_id = "pfnededegaaopdmhkdmcofjmoldfiped"
-            
-            # Check extension installation
-            ext_path = os.path.join(profile_path, "Default", "Extensions", extension_id)
-            if not os.path.exists(ext_path):
-                return False, "SwitchyOmega extension not installed"
-            
-            # Check extension settings
-            local_ext_path = os.path.join(profile_path, "Default", "Local Extension Settings", extension_id)
-            if not os.path.exists(local_ext_path):
-                return False, "Extension settings not found"
-            
-            # Check IndexedDB for proxy data
-            indexeddb_path = os.path.join(profile_path, "Default", "IndexedDB")
-            proxy_db_found = False
-            
-            if os.path.exists(indexeddb_path):
-                for item in os.listdir(indexeddb_path):
-                    if "chrome-extension" in item and extension_id in item:
-                        proxy_db_found = True
-                        break
-            
-            if not proxy_db_found:
-                return False, "No proxy data found in IndexedDB"
-            
-            # Check Preferences for extension state
-            prefs_file = os.path.join(profile_path, "Default", "Preferences")
-            if os.path.exists(prefs_file):
-                try:
-                    with open(prefs_file, 'r', encoding='utf-8') as f:
-                        prefs = json.load(f)
-                    
-                    # Check if extension is enabled
-                    if 'extensions' in prefs:
-                        ext_data = prefs['extensions']
-                        
-                        # Check if extension is in state
-                        if 'state' in ext_data and extension_id in ext_data['state']:
-                            ext_state = ext_data['state'][extension_id]
-                            if ext_state.get('enabled', False):
-                                return True, "Proxy configured and extension enabled"
-                            else:
-                                return False, "Extension disabled"
-                        else:
-                            # Extension not in state, but might be configured
-                            # Check if extension is in install_signature
-                            if 'install_signature' in ext_data and 'ids' in ext_data['install_signature']:
-                                if extension_id in ext_data['install_signature']['ids']:
-                                    return True, "Extension installed and configured"
-                            
-                            return False, "Extension not in state"
-                    else:
-                        return False, "No extensions section in preferences"
-                except Exception as e:
-                    return False, f"Error reading preferences: {str(e)}"
-            
-            return False, "Preferences file not found"
-            
-        except Exception as e:
-            return False, f"Analysis error: {str(e)}"
-
-    def get_profiles_with_proxy(self):
-        """Get all profiles that have proxy configured"""
-        all_profiles = self.get_all_profiles()
-        proxy_profiles = []
-        
-        print(f"[DEBUG] [ANALYZE] Analyzing {len(all_profiles)} profiles for proxy status...")
-        
-        for profile in all_profiles:
-            has_proxy, message = self.analyze_profile_proxy_status(profile)
-            if has_proxy:
-                proxy_profiles.append(profile)
-                print(f"[SUCCESS] {profile}: {message}")
-            else:
-                print(f"[ERROR] {profile}: {message}")
-        
-        return proxy_profiles
-
-    def get_profiles_without_proxy(self):
-        """Get all profiles that don't have proxy configured"""
-        all_profiles = self.get_all_profiles()
-        no_proxy_profiles = []
-        
-        print(f"[DEBUG] [ANALYZE] Analyzing {len(all_profiles)} profiles for missing proxy...")
-        
-        for profile in all_profiles:
-            has_proxy, message = self.analyze_profile_proxy_status(profile)
-            if not has_proxy:
-                no_proxy_profiles.append(profile)
-                print(f"[ERROR] {profile}: {message}")
-            else:
-                print(f"[SUCCESS] {profile}: {message}")
-        
-        return no_proxy_profiles
-
-    def smart_configure_proxy(self, profile_name, proxy_string):
-        """Smart proxy configuration - check if profile needs proxy setup"""
-        print(f"🧠 [SMART] Smart proxy configuration for {profile_name}")
-        
-        # Check current status
-        has_proxy, message = self.analyze_profile_proxy_status(profile_name)
-        
-        if has_proxy:
-            print(f"ℹ️ [SMART] Profile {profile_name} already has proxy configured: {message}")
-            return True, f"Proxy already configured: {message}"
-        
-        # Configure proxy
-        print(f"[TOOL] [SMART] Configuring proxy for {profile_name}...")
-        success, result_message = self.input_proxy_from_ui(profile_name, proxy_string)
-        
-        if success:
-            print(f"[SUCCESS] [SMART] Successfully configured proxy for {profile_name}")
-            return True, result_message
-        else:
-            print(f"[ERROR] [SMART] Failed to configure proxy for {profile_name}: {result_message}")
-            return False, result_message
-
-    def bulk_smart_configure_proxy(self, profile_list, proxy_string):
-        """Bulk smart proxy configuration"""
-        print(f"🧠 [SMART] Bulk smart proxy configuration for {len(profile_list)} profiles")
-        
-        results = []
-        success_count = 0
-        
-        for profile_name in profile_list:
-            print(f"\n[CREATE] [SMART] Processing {profile_name}...")
-            success, message = self.smart_configure_proxy(profile_name, proxy_string)
-            
-            results.append({
-                'profile': profile_name,
-                'success': success,
-                'message': message
-            })
-            
-            if success:
-                success_count += 1
-        
-        return results, success_count
     
     def ultimate_auto_2fa_handler(self, email, password=None, refresh_token=None, client_id="9e5f94bc-e8a4-4e73-b8be-63364c29d753"):
         """Ultimate Auto 2FA Handler - Xử lý tự động hoàn toàn"""
@@ -8679,6 +8226,154 @@ try {
                 
         except Exception as e:
             raise Exception(f"Error lấy Microsoft token: {str(e)}")
+    
+    def set_omocaptcha_api_key(self, profile_name, api_key, extension_id=None):
+        """
+        Set OMOcaptcha API key in extension storage for the profile.
+        Tìm extension OMOcaptcha và lưu API key vào chrome.storage.local
+        
+        Args:
+            profile_name (str): Profile name (not full path)
+            api_key (str): OMOcaptcha API key
+        """
+        try:
+            profile_path = self.get_profile_path(profile_name)
+            if not os.path.exists(profile_path):
+                print(f"[ERROR] [OMO] Profile path not found: {profile_path}")
+                return False
+            
+            # Tìm extension ID của OMOcaptcha (ưu tiên override/config hoặc tham số)
+            # Known OMOcaptcha extension ID (from working profile P-136960-0004)
+            known_ext_id = 'dfjghhjachoacpgpkmbpdlpppeagojhe'
+            ext_dirs = [
+                os.path.join(profile_path, "Default", "Extensions"),
+                os.path.join(profile_path, "Extensions")
+            ]
+            
+            omocaptcha_extension_id = (extension_id or self._get_omocaptcha_extension_id_override() or None)
+            if omocaptcha_extension_id:
+                print(f"[DEBUG] [OMO] Using overridden extension ID: {omocaptcha_extension_id}")
+            else:
+                # First, check if known extension ID exists in this profile
+                for ext_dir in ext_dirs:
+                    ext_id_path = os.path.join(ext_dir, known_ext_id)
+                    if os.path.exists(ext_id_path) and os.path.isdir(ext_id_path):
+                        version_folders = [d for d in os.listdir(ext_id_path) 
+                                         if os.path.isdir(os.path.join(ext_id_path, d))]
+                        for version_folder in version_folders:
+                            manifest_path = os.path.join(ext_id_path, version_folder, "manifest.json")
+                            if os.path.exists(manifest_path):
+                                try:
+                                    import json
+                                    with open(manifest_path, 'r', encoding='utf-8') as f:
+                                        manifest = json.load(f)
+                                    ext_name = manifest.get('name', '').lower()
+                                    if 'omo' in ext_name and 'captcha' in ext_name:
+                                        omocaptcha_extension_id = known_ext_id
+                                        print(f"[DEBUG] [OMO] Found known extension ID {known_ext_id} in profile")
+                                        break
+                                except Exception:
+                                    pass
+                        if omocaptcha_extension_id:
+                            break
+            # If still not found, search all extensions
+            if not omocaptcha_extension_id:
+                for ext_dir in ext_dirs:
+                    if os.path.exists(ext_dir):
+                        for ext_id_folder in os.listdir(ext_dir):
+                            ext_id_path = os.path.join(ext_dir, ext_id_folder)
+                            if os.path.isdir(ext_id_path):
+                                # Check manifest.json để tìm extension name có chứa "omo" hoặc "captcha"
+                                version_folders = [d for d in os.listdir(ext_id_path) 
+                                                 if os.path.isdir(os.path.join(ext_id_path, d))]
+                                for version_folder in version_folders:
+                                    manifest_path = os.path.join(ext_id_path, version_folder, "manifest.json")
+                                    if os.path.exists(manifest_path):
+                                        try:
+                                            import json
+                                            with open(manifest_path, 'r', encoding='utf-8') as f:
+                                                manifest = json.load(f)
+                                            ext_name = manifest.get('name', '').lower()
+                                            if 'omo' in ext_name or 'captcha' in ext_name:
+                                                omocaptcha_extension_id = ext_id_folder
+                                                print(f"[DEBUG] [OMO] Found OMOcaptcha extension: {omocaptcha_extension_id}")
+                                                break
+                                        except:
+                                            pass
+                                if omocaptcha_extension_id:
+                                    break
+                    if omocaptcha_extension_id:
+                        break
+            
+            if not omocaptcha_extension_id:
+                # Nếu không tìm thấy, thử tìm trong Preferences
+                prefs_path = os.path.join(profile_path, "Default", "Preferences")
+                if not os.path.exists(prefs_path):
+                    prefs_path = os.path.join(profile_path, "Preferences")
+                
+                if os.path.exists(prefs_path):
+                    try:
+                        import json
+                        with open(prefs_path, 'r', encoding='utf-8') as f:
+                            prefs = json.load(f)
+                        extensions = prefs.get('extensions', {}).get('settings', {})
+                        # First, check for known extension ID
+                        if known_ext_id in extensions:
+                            manifest = extensions[known_ext_id].get('manifest', {})
+                            ext_name = manifest.get('name', '').lower()
+                            if 'omo' in ext_name and 'captcha' in ext_name:
+                                omocaptcha_extension_id = known_ext_id
+                                print(f"[DEBUG] [OMO] Found known extension ID {known_ext_id} in Preferences")
+                        # If not found, search all extensions
+                        if not omocaptcha_extension_id:
+                            for ext_id, ext_data in extensions.items():
+                                manifest = ext_data.get('manifest', {})
+                                ext_name = manifest.get('name', '').lower()
+                                if 'omo' in ext_name or 'captcha' in ext_name:
+                                    omocaptcha_extension_id = ext_id
+                                    print(f"[DEBUG] [OMO] Found OMOcaptcha extension in Preferences: {omocaptcha_extension_id}")
+                                    break
+                    except Exception as e:
+                        print(f"[WARNING] [OMO] Error reading Preferences: {e}")
+            
+            if not omocaptcha_extension_id:
+                print(f"[WARNING] [OMO] Không tìm thấy extension OMOcaptcha trong profile {profile_name}")
+                print(f"[INFO] [OMO] Vui lòng cài đặt extension OMOcaptcha trước")
+                return False
+            
+            # Nếu Chrome đang chạy (DevToolsActivePort tồn tại), không chỉnh file để tránh hỏng Preferences
+            devtools_flag = os.path.join(profile_path, 'DevToolsActivePort')
+            if os.path.exists(devtools_flag):
+                print(f"[WARNING] [OMO] Chrome is running for {profile_name}; skip writing settings. Retry after closing Chrome.")
+                return False
+
+            # Lưu API key vào Local Extension Settings
+            # Chrome lưu extension storage trong: Default/Local Extension Settings/{extension_id}/
+            local_ext_path = os.path.join(profile_path, "Default", "Local Extension Settings", omocaptcha_extension_id)
+            os.makedirs(local_ext_path, exist_ok=True)
+            
+            # Chrome sử dụng LevelDB format, nhưng có thể lưu trực tiếp vào Preferences của extension
+            # Hoặc sử dụng cách đơn giản hơn: inject vào localStorage khi launch
+            
+            # Cách 2: Lưu vào Preferences file của extension (nếu extension đọc từ đây)
+            # Hoặc lưu vào file đơn giản mà extension có thể đọc
+            
+            # Cách tốt nhất: Inject API key vào chrome.storage.local khi launch browser
+            # Lưu tạm vào file để inject sau
+            api_key_file = os.path.join(local_ext_path, "api_key.txt")
+            with open(api_key_file, 'w', encoding='utf-8') as f:
+                f.write(api_key)
+            
+            # KHÔNG ghi Preferences nữa để tránh lỗi "Không thể đọc tuỳ chọn của bạn"
+            print(f"[SUCCESS] [OMO] Đã lưu api_key.txt cho extension {omocaptcha_extension_id} tại profile {profile_name}")
+            print(f"[INFO] [OMO] Key sẽ được inject vào chrome.storage.local sau khi khởi chạy Chrome")
+            return True
+            
+        except Exception as e:
+            print(f"[ERROR] [OMO] Error setting OMOcaptcha API key: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
 
 
 class ChromeExtensionManager:
@@ -9064,115 +8759,6 @@ class ChromeExtensionManager:
             return {'success_count': 0, 'failed_count': len(target_profile_paths), 
                    'results': [{'profile': p, 'success': False, 'message': error_msg} 
                               for p in target_profile_paths]}
-    
-    def set_omocaptcha_api_key(self, profile_name, api_key, extension_id=None):
-        """
-        Set OMOcaptcha API key in extension storage for the profile.
-        Tìm extension OMOcaptcha và lưu API key vào chrome.storage.local
-        
-        Args:
-            profile_name (str): Profile name (not full path)
-            api_key (str): OMOcaptcha API key
-        """
-        try:
-            profile_path = self.get_profile_path(profile_name)
-            if not os.path.exists(profile_path):
-                print(f"[ERROR] [OMO] Profile path not found: {profile_path}")
-                return False
-            
-            # Tìm extension ID của OMOcaptcha (ưu tiên override/config hoặc tham số)
-            # Thường extension ID có thể tìm trong Default/Extensions hoặc Extensions folder
-            ext_dirs = [
-                os.path.join(profile_path, "Default", "Extensions"),
-                os.path.join(profile_path, "Extensions")
-            ]
-            
-            omocaptcha_extension_id = (extension_id or self._get_omocaptcha_extension_id_override() or None)
-            if omocaptcha_extension_id:
-                print(f"[DEBUG] [OMO] Using overridden extension ID: {omocaptcha_extension_id}")
-            for ext_dir in ext_dirs:
-                if os.path.exists(ext_dir):
-                    for ext_id_folder in os.listdir(ext_dir):
-                        ext_id_path = os.path.join(ext_dir, ext_id_folder)
-                        if os.path.isdir(ext_id_path):
-                            # Check manifest.json để tìm extension name có chứa "omo" hoặc "captcha"
-                            version_folders = [d for d in os.listdir(ext_id_path) 
-                                             if os.path.isdir(os.path.join(ext_id_path, d))]
-                            for version_folder in version_folders:
-                                manifest_path = os.path.join(ext_id_path, version_folder, "manifest.json")
-                                if os.path.exists(manifest_path):
-                                    try:
-                                        import json
-                                        with open(manifest_path, 'r', encoding='utf-8') as f:
-                                            manifest = json.load(f)
-                                            ext_name = manifest.get('name', '').lower()
-                                            if 'omo' in ext_name or 'captcha' in ext_name:
-                                                omocaptcha_extension_id = ext_id_folder
-                                                print(f"[DEBUG] [OMO] Found OMOcaptcha extension: {omocaptcha_extension_id}")
-                                                break
-                                    except:
-                                        pass
-                            if omocaptcha_extension_id:
-                                break
-                if omocaptcha_extension_id:
-                    break
-            
-            if not omocaptcha_extension_id:
-                # Nếu không tìm thấy, thử tìm trong Preferences
-                prefs_path = os.path.join(profile_path, "Default", "Preferences")
-                if not os.path.exists(prefs_path):
-                    prefs_path = os.path.join(profile_path, "Preferences")
-                
-                if os.path.exists(prefs_path):
-                    with open(prefs_path, 'r', encoding='utf-8') as f:
-                        prefs = json.load(f)
-                        extensions = prefs.get('extensions', {}).get('settings', {})
-                        for ext_id, ext_data in extensions.items():
-                            manifest = ext_data.get('manifest', {})
-                            ext_name = manifest.get('name', '').lower()
-                            if 'omo' in ext_name or 'captcha' in ext_name:
-                                omocaptcha_extension_id = ext_id
-                                print(f"[DEBUG] [OMO] Found OMOcaptcha extension in Preferences: {omocaptcha_extension_id}")
-                                break
-            
-            if not omocaptcha_extension_id:
-                print(f"[WARNING] [OMO] Không tìm thấy extension OMOcaptcha trong profile {profile_name}")
-                print(f"[INFO] [OMO] Vui lòng cài đặt extension OMOcaptcha trước")
-                return False
-            
-            # Nếu Chrome đang chạy (DevToolsActivePort tồn tại), không chỉnh file để tránh hỏng Preferences
-            devtools_flag = os.path.join(profile_path, 'DevToolsActivePort')
-            if os.path.exists(devtools_flag):
-                print(f"[WARNING] [OMO] Chrome is running for {profile_name}; skip writing settings. Retry after closing Chrome.")
-                return False
-
-            # Lưu API key vào Local Extension Settings
-            # Chrome lưu extension storage trong: Default/Local Extension Settings/{extension_id}/
-            local_ext_path = os.path.join(profile_path, "Default", "Local Extension Settings", omocaptcha_extension_id)
-            os.makedirs(local_ext_path, exist_ok=True)
-            
-            # Chrome sử dụng LevelDB format, nhưng có thể lưu trực tiếp vào Preferences của extension
-            # Hoặc sử dụng cách đơn giản hơn: inject vào localStorage khi launch
-            
-            # Cách 2: Lưu vào Preferences file của extension (nếu extension đọc từ đây)
-            # Hoặc lưu vào file đơn giản mà extension có thể đọc
-            
-            # Cách tốt nhất: Inject API key vào chrome.storage.local khi launch browser
-            # Lưu tạm vào file để inject sau
-            api_key_file = os.path.join(local_ext_path, "api_key.txt")
-            with open(api_key_file, 'w', encoding='utf-8') as f:
-                f.write(api_key)
-            
-            # KHÔNG ghi Preferences nữa để tránh lỗi "Không thể đọc tuỳ chọn của bạn"
-            print(f"[SUCCESS] [OMO] Đã lưu api_key.txt cho extension {omocaptcha_extension_id} tại profile {profile_name}")
-            print(f"[INFO] [OMO] Key sẽ được inject vào chrome.storage.local sau khi khởi chạy Chrome")
-            return True
-            
-        except Exception as e:
-            print(f"[ERROR] [OMO] Error setting OMOcaptcha API key: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return False
     
     def update_preferences(self, profile_path, extension_id, extension_name=None):
         """

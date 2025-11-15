@@ -1,6 +1,12 @@
 {
   "url": "https://www.tiktok.com/login/phone-or-email/email",
-  "accounts": "user697761819146|@c0dg8T1C8Y",
+  "accounts": "user58813200876247|\nHung@sale4319122474",
   "delay": "2",
-  "omocaptcha_api_key": "apitokenmk6zkiz7etmegjm8xvnfl4x4jg25tkssqdw58b2qzyh1vortfqnjcxnsvhszlz1718044497"
+  "omocaptcha_api_key": "apitokenmk6zkiz7etmegjm8xvnfl4x4jg25tkssqdw58b2qzyh1vortfqnjcxnsvhszlz1718044497",
+  "type1_enabled": true,
+  "type2_enabled": false,
+  "type3_enabled": false,
+  "type1_wait": "60",
+  "type2_wait": "75",
+  "type3_wait": "90"
 }

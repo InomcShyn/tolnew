@@ -5,7 +5,16 @@ import time
 import os
 import json
 import random
+import shutil
 from core.chrome_manager import ChromeProfileManager
+from core.tiles.tile_email_otp import parse_account_line, get_login_otp_from_hotmail
+from core.tiles.tile_omocaptcha import (
+    get_omocaptcha_extension_id,
+    install_omocaptcha_extension_local,
+    set_omocaptcha_api_key_for_profile,
+    test_omocaptcha_setup,
+    setup_omocaptcha_for_bulk_run
+)
 
 # NKT configuration đã được xóa
 
@@ -5495,21 +5504,31 @@ Bạn có muốn tiếp tục?"""
         url_entry.pack(fill=tk.X, pady=(0, 5))
         
         # URL suggestions
-        suggestions_frame = ttk.Frame(url_frame)
-        suggestions_frame.pack(fill=tk.X)
+        account_type_frame = ttk.LabelFrame(main_frame, text="🧾 Loại tài khoản & thời gian xử lý", padding="10")
+        account_type_frame.pack(fill=tk.X, pady=(0, 10))
         
-        common_urls = [
-            ("TikTok Login (Email)", "https://www.tiktok.com/login/phone-or-email/email"),
-            ("TikTok Login (Phone)", "https://www.tiktok.com/login/phone-or-email/phone"),
-            ("TikTok Home", "https://www.tiktok.com"),
-            ("TikTok For You", "https://www.tiktok.com/foryou")
-        ]
+        type1_enabled_var = tk.BooleanVar(value=saved_data.get('type1_enabled', True))
+        type2_enabled_var = tk.BooleanVar(value=saved_data.get('type2_enabled', True))
+        type3_enabled_var = tk.BooleanVar(value=saved_data.get('type3_enabled', True))
+        type1_wait_var = tk.StringVar(value=str(saved_data.get('type1_wait', 60)))
+        type2_wait_var = tk.StringVar(value=str(saved_data.get('type2_wait', 75)))
+        type3_wait_var = tk.StringVar(value=str(saved_data.get('type3_wait', 90)))
         
-        for i, (name, url) in enumerate(common_urls):
-            btn = ttk.Button(suggestions_frame, text=name, 
-                           command=lambda u=url: url_var.set(u),
-                           style="Accent.TButton")
-            btn.pack(side=tk.LEFT, padx=(0, 5))
+        account_type_frame.columnconfigure(0, weight=1)
+        account_type_frame.columnconfigure(1, weight=0)
+        account_type_frame.columnconfigure(2, weight=0)
+        
+        ttk.Checkbutton(account_type_frame, text="Loại 1: username|password (giải captcha thủ công)", variable=type1_enabled_var).grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(account_type_frame, text="Thời gian chờ (s):").grid(row=0, column=1, sticky=tk.E, padx=(10, 5))
+        ttk.Entry(account_type_frame, textvariable=type1_wait_var, width=8).grid(row=0, column=2, sticky=tk.W)
+        
+        ttk.Checkbutton(account_type_frame, text="Loại 2: username|password|hotmail|password (tự điền 2FA Hotmail)", variable=type2_enabled_var).grid(row=1, column=0, sticky=tk.W, pady=(5,0))
+        ttk.Label(account_type_frame, text="Timeout lấy mã (s):").grid(row=1, column=1, sticky=tk.E, padx=(10, 5), pady=(5,0))
+        ttk.Entry(account_type_frame, textvariable=type2_wait_var, width=8).grid(row=1, column=2, sticky=tk.W, pady=(5,0))
+        
+        ttk.Checkbutton(account_type_frame, text="Loại 3: username|password|hotmail|password|token|id (Graph token)", variable=type3_enabled_var).grid(row=2, column=0, sticky=tk.W, pady=(5,0))
+        ttk.Label(account_type_frame, text="Timeout lấy mã (s):").grid(row=2, column=1, sticky=tk.E, padx=(10, 5), pady=(5,0))
+        ttk.Entry(account_type_frame, textvariable=type3_wait_var, width=8).grid(row=2, column=2, sticky=tk.W, pady=(5,0))
         
         # OMOcaptcha API Key input
         omocaptcha_frame = ttk.LabelFrame(main_frame, text="🔑 OMOcaptcha API Key", padding="10")
@@ -5538,6 +5557,45 @@ Bạn có muốn tiếp tục?"""
                                                variable=show_omocaptcha_var,
                                                command=toggle_omocaptcha_visibility)
         show_omocaptcha_check.pack(anchor=tk.W)
+        
+        # Cài extension OMOcaptcha và lưu API key tự động
+        install_omo_and_set_key_var = tk.BooleanVar(value=bool(omocaptcha_api_key_var.get()))
+        ttk.Checkbutton(
+            omocaptcha_frame,
+            text="Cài OMOcaptcha extension và lưu API key vào extension (mỗi profile)",
+            variable=install_omo_and_set_key_var
+        ).pack(anchor=tk.W, pady=(5, 0))
+        
+        def test_omocaptcha_install():
+            try:
+                selected_profiles = []
+                if hasattr(self, 'tree') and self.tree.winfo_exists():
+                    selected_profiles = self.tree.selection()
+                if not selected_profiles:
+                    messagebox.showwarning("Thiếu profile", "Vui lòng chọn ít nhất một profile ở bảng bên trái để test.")
+                    return
+                
+                profile_name = self.tree.item(selected_profiles[0])['text']
+                api_key = omocaptcha_api_key_var.get().strip()
+                auto_install = bool(install_omo_and_set_key_var.get())
+                
+                # Sử dụng hàm từ tile_omocaptcha
+                result = test_omocaptcha_setup(
+                    self.manager,
+                    profile_name,
+                    api_key,
+                    auto_install=auto_install
+                )
+                
+                messagebox.showinfo("Kết quả test OMOcaptcha", "\n".join(result['messages']))
+            except Exception as e:
+                messagebox.showerror("Lỗi", f"Không thể test OMOcaptcha: {e}")
+        
+        ttk.Button(
+            omocaptcha_frame,
+            text="🧪 Test cài OMOcaptcha + lưu API key",
+            command=test_omocaptcha_install
+        ).pack(anchor=tk.W, pady=(8, 0))
         
         # Format selection
         format_frame = ttk.Frame(main_frame)
@@ -5795,7 +5853,13 @@ testuser|testpass123
                 'url': url_var.get(),
                 'accounts': accounts_text.get("1.0", "end-1c"),
                 'delay': delay_var.get(),
-                'omocaptcha_api_key': omocaptcha_api_key_var.get()
+                'omocaptcha_api_key': omocaptcha_api_key_var.get(),
+                'type1_enabled': type1_enabled_var.get(),
+                'type2_enabled': type2_enabled_var.get(),
+                'type3_enabled': type3_enabled_var.get(),
+                'type1_wait': type1_wait_var.get(),
+                'type2_wait': type2_wait_var.get(),
+                'type3_wait': type3_wait_var.get()
             }
             self._save_bulk_run_data(data)
             messagebox.showinfo("Thành công", "Đã lưu dữ liệu!")
@@ -5806,6 +5870,12 @@ testuser|testpass123
                 accounts_text.delete("1.0", tk.END)
                 delay_var.set("2")
                 omocaptcha_api_key_var.set("")
+                type1_enabled_var.set(True)
+                type2_enabled_var.set(True)
+                type3_enabled_var.set(True)
+                type1_wait_var.set("60")
+                type2_wait_var.set("75")
+                type3_wait_var.set("90")
                 self._save_bulk_run_data({})
                 messagebox.showinfo("Thành công", "Đã xóa dữ liệu!")
         
@@ -5825,7 +5895,13 @@ testuser|testpass123
                 'url': url,
                 'accounts': accounts_text_content,
                 'delay': delay_var.get(),
-                'omocaptcha_api_key': omocaptcha_api_key
+                'omocaptcha_api_key': omocaptcha_api_key,
+                'type1_enabled': type1_enabled_var.get(),
+                'type2_enabled': type2_enabled_var.get(),
+                'type3_enabled': type3_enabled_var.get(),
+                'type1_wait': type1_wait_var.get(),
+                'type2_wait': type2_wait_var.get(),
+                'type3_wait': type3_wait_var.get()
             })
             try:
                 print(f"🧾 [BULK-RUN] Raw accounts length: {len(accounts_text_content)}")
@@ -5848,6 +5924,30 @@ testuser|testpass123
                 messagebox.showerror("Lỗi", "Delay phải là số!")
                 return
             
+            def _parse_wait(value, default):
+                try:
+                    v = int(float(value))
+                    if v < 0:
+                        return 0
+                    return v
+                except Exception:
+                    return default
+            
+            type_settings = {
+                'type1': {
+                    'enabled': bool(type1_enabled_var.get()),
+                    'wait': _parse_wait(type1_wait_var.get(), 60)
+                },
+                'type2': {
+                    'enabled': bool(type2_enabled_var.get()),
+                    'wait': _parse_wait(type2_wait_var.get(), 75)
+                },
+                'type3': {
+                    'enabled': bool(type3_enabled_var.get()),
+                    'wait': _parse_wait(type3_wait_var.get(), 90)
+                }
+            }
+            
             # Parse accounts based on format
             accounts = []
             format_type = format_var.get()
@@ -5857,6 +5957,12 @@ testuser|testpass123
                 if not line or line.startswith('#'):
                     continue
                 account_data = None
+
+                parsed_variant = parse_account_line(line)
+                if parsed_variant.get('variant') in (1, 2, 3) and parsed_variant.get('username') and parsed_variant.get('password'):
+                    parsed_variant['raw_line'] = line
+                    accounts.append(parsed_variant)
+                    continue
 
                 fmt = (format_var.get() or "").strip().lower()
                 if fmt == "standard":
@@ -5875,7 +5981,7 @@ testuser|testpass123
                     # username|password|email|email_password|...
                     tk = parse_tiktok_format(line)
                     if tk:
-                        accounts.append({
+                        parsed_data = {
                             'email': tk['email'],
                             'password': tk['password'],
                             'twofa': '',
@@ -5885,7 +5991,10 @@ testuser|testpass123
                             'ms_client_id': tk.get('ms_client_id', ''),
                             'session_token': tk.get('session_token', ''),
                             'user_id': tk.get('user_id', '')
-                        })
+                        }
+                        parsed_data['variant'] = tk.get('variant', 0) if isinstance(tk, dict) else 0
+                        parsed_data['raw_line'] = line
+                        accounts.append(parsed_data)
                         continue
                 else:
                     # Custom/autodetect: email-first | standard | colon
@@ -5904,6 +6013,8 @@ testuser|testpass123
                             }
 
                     if account_data:
+                        account_data.setdefault('variant', 0)
+                        account_data['raw_line'] = line
                         accounts.append(account_data)
             
             print(f"✅ [BULK-RUN] Đã parse {len(accounts)} accounts")
@@ -5934,6 +6045,28 @@ testuser|testpass123
                     messagebox.showwarning("Cảnh báo", "Không có tài khoản hợp lệ!")
                     return
             
+            normalized_accounts = []
+            for acc in accounts:
+                acc_copy = dict(acc)
+                acc_copy.setdefault('variant', 0)
+                acc_copy.setdefault('raw_line', acc_copy.get('raw', ''))
+                acc_copy.setdefault('login_identifier', acc_copy.get('username') or acc_copy.get('email'))
+                variant = acc_copy.get('variant', 0)
+                if variant == 1:
+                    acc_copy.setdefault('email', acc_copy.get('login_identifier'))
+                elif variant == 2:
+                    otp_email = acc_copy.get('hotmail_user') or acc_copy.get('otp_email')
+                    acc_copy['otp_email'] = otp_email
+                    acc_copy.setdefault('email_password', acc_copy.get('hotmail_pass'))
+                    acc_copy.setdefault('email', acc_copy.get('login_identifier'))
+                elif variant == 3:
+                    otp_email = acc_copy.get('hotmail_user') or acc_copy.get('otp_email')
+                    acc_copy['otp_email'] = otp_email
+                    acc_copy.setdefault('email_password', acc_copy.get('hotmail_pass'))
+                    acc_copy.setdefault('email', acc_copy.get('login_identifier'))
+                normalized_accounts.append(acc_copy)
+            accounts = normalized_accounts
+            
             dialog.destroy()
             
             # Ensure accounts count matches number of selected profiles
@@ -5953,7 +6086,18 @@ testuser|testpass123
             print(f"⌨️ [BULK-RUN] Keyboard-only autofill enabled")
             if omocaptcha_api_key:
                 print(f"🔑 [BULK-RUN] OMOcaptcha API key provided: {omocaptcha_api_key[:10]}...{omocaptcha_api_key[-5:]}")
-            self._execute_bulk_run(run_profiles, url, accounts, delay, "native", omocaptcha_api_key)
+            self._execute_bulk_run(
+                run_profiles,
+                url,
+                accounts,
+                delay,
+                "native",
+                {
+                    'api_key': omocaptcha_api_key,
+                    'auto_install_and_set': bool(install_omo_and_set_key_var.get())
+                },
+                type_settings
+            )
         
         # Buttons với style rõ ràng
         start_btn = ttk.Button(buttons_frame, text="[LAUNCH] Bắt đầu", command=start_bulk_run)
@@ -5969,13 +6113,35 @@ testuser|testpass123
         # Focus vào nút Bắt đầu
         start_btn.focus()
     
-    def _execute_bulk_run(self, profiles, url, accounts, delay, launch_mode="native", omocaptcha_api_key=None):
+    
+    def _execute_bulk_run(self, profiles, url, accounts, delay, launch_mode="native", omo_config=None, type_settings=None):
         """Thực thi bulk run"""
         def bulk_run_thread():
             self.status_label.config(text="Đang chạy hàng loạt...")
             success_count = 0
             total_operations = min(len(profiles), len(accounts))  # Mỗi profile 1 account
             current_operation = 0
+            
+            local_type_settings = type_settings
+
+            default_type_settings = {
+                'type1': {'enabled': True, 'wait': 60},
+                'type2': {'enabled': True, 'wait': 75},
+                'type3': {'enabled': True, 'wait': 90}
+            }
+            merged_type_settings = {k: dict(v) for k, v in default_type_settings.items()}
+            if isinstance(local_type_settings, dict):
+                for key, cfg in local_type_settings.items():
+                    if key in merged_type_settings and isinstance(cfg, dict):
+                        merged_type_settings[key]['enabled'] = bool(cfg.get('enabled', merged_type_settings[key]['enabled']))
+                        try:
+                            wait_value = int(cfg.get('wait', merged_type_settings[key]['wait']))
+                            if wait_value < 0:
+                                wait_value = 0
+                        except Exception:
+                            wait_value = merged_type_settings[key]['wait']
+                        merged_type_settings[key]['wait'] = wait_value
+            effective_type_settings = merged_type_settings
             
             # Memory monitoring
             print(f"🧠 [BULK-RUN] Bắt đầu với {total_operations} profiles")
@@ -5985,6 +6151,16 @@ testuser|testpass123
             if memory_info:
                 print(f"🧠 [BULK-RUN] RAM ban đầu: {memory_info['system_memory_percent']}%")
                 print(f"🧠 [BULK-RUN] Available: {memory_info['available_memory_gb']}GB")
+            
+            # Chuẩn hóa cấu hình OMOcaptcha
+            omocaptcha_api_key = None
+            auto_install_and_set = False
+            try:
+                if isinstance(omo_config, dict):
+                    omocaptcha_api_key = (omo_config.get('api_key') or '').strip()
+                    auto_install_and_set = bool(omo_config.get('auto_install_and_set', False))
+            except Exception:
+                pass
             
             # Mỗi profile chỉ dùng 1 account (theo thứ tự)
             for i, profile_name in enumerate(profiles):
@@ -6009,31 +6185,68 @@ testuser|testpass123
                     self.root.after(0, lambda: self.status_label.config(
                         text=f"Đang chạy hàng loạt... ({current_operation}/{total_operations})"))
                     
-                    # Launch profile with login data - CHỈ SỬ DỤNG USERNAME|PASSWORD CHO STANDARD FORMAT
+                    # Launch profile with login data
+                    variant = account.get('variant', 0)
+                    login_identifier = account.get('login_identifier', account.get('username', account.get('email', '')))
+                    otp_email = account.get('otp_email')
+                    
                     login_data = {
-                        'username': account.get('username', account.get('email', '')),
+                        'username': login_identifier,
                         'password': account['password'],
-                        'email': account.get('email', account.get('username', '')),  # Backward compatibility
+                        'email': otp_email or account.get('email', login_identifier),
                         'twofa': ''  # Không hỗ trợ 2FA cho standard format
                     }
                     
                     # Add TikTok specific data if available
-                    if 'email_password' in account:
+                    if 'email_password' in account and account.get('email_password'):
                         login_data['email_password'] = account['email_password']
-                    if 'session_token' in account:
+                    if 'session_token' in account and account.get('session_token'):
                         login_data['session_token'] = account['session_token']
-                    if 'user_id' in account:
+                    if 'user_id' in account and account.get('user_id'):
                         login_data['user_id'] = account['user_id']
+                    if 'token_id' in account and account.get('token_id'):
+                        login_data['token_id'] = account['token_id']
+                    if 'hotmail_user' in account and account.get('hotmail_user'):
+                        login_data['hotmail_user'] = account['hotmail_user']
+                    if 'hotmail_pass' in account and account.get('hotmail_pass'):
+                        login_data.setdefault('email_password', account['hotmail_pass'])
+                        login_data['hotmail_pass'] = account['hotmail_pass']
+                    if otp_email:
+                        login_data['otp_email'] = otp_email
                     
                     print(f"[LAUNCH] [BULK-RUN] Launch {profile_name} với {login_data['username']} (mode: {launch_mode})")
                     
-                    # Save OMOcaptcha API key to extension if provided
-                    if omocaptcha_api_key:
-                        try:
-                            self.manager.set_omocaptcha_api_key(profile_name, omocaptcha_api_key)
+                    # Cài OMOcaptcha extension và lưu API key nếu được bật (sử dụng tile_omocaptcha)
+                    if auto_install_and_set and omocaptcha_api_key:
+                        install_success, key_success, messages = setup_omocaptcha_for_bulk_run(
+                            self.manager,
+                            profile_name,
+                            omocaptcha_api_key,
+                            auto_install=True
+                        )
+                        if install_success:
+                            print(f"✅ [BULK-RUN] OMOcaptcha installed for {profile_name}")
+                        else:
+                            for msg in messages:
+                                if "Cài extension" in msg:
+                                    print(f"⚠️ [BULK-RUN] {msg}")
+                        if key_success:
                             print(f"🔑 [BULK-RUN] Đã lưu OMOcaptcha API key vào profile {profile_name}")
-                        except Exception as e:
-                            print(f"⚠️ [BULK-RUN] Không thể lưu OMOcaptcha API key: {str(e)}")
+                        else:
+                            for msg in messages:
+                                if "Lưu API key" in msg:
+                                    print(f"⚠️ [BULK-RUN] {msg}")
+                    elif omocaptcha_api_key:
+                        # Chỉ lưu API key, không cài extension
+                        key_ok, key_msg = set_omocaptcha_api_key_for_profile(
+                            self.manager,
+                            profile_name,
+                            omocaptcha_api_key
+                        )
+                        if key_ok:
+                            print(f"🔑 [BULK-RUN] Đã lưu OMOcaptcha API key vào profile {profile_name}")
+                        else:
+                            print(f"⚠️ [BULK-RUN] Không thể lưu OMOcaptcha API key: {key_msg}")
                     
                     # Retry mechanism for Chrome crashes
                     max_retries = 3
@@ -6102,21 +6315,57 @@ testuser|testpass123
                         else:
                             print(f"⚠️ [BULK-RUN] Lỗi lưu session: {session_message}")
                         
-                        # TIMEOUT 1 PHÚT ĐỂ NHẬP 2FA THỦ CÔNG
-                        print(f"⏰ [BULK-RUN] Đợi 60 giây để nhập 2FA cho {profile_name}...")
-                        self.root.after(0, lambda: self.status_label.config(
-                            text=f"Đợi nhập 2FA cho {profile_name}... (60s)"))
+                        type_key = f"type{variant}" if variant in (1, 2, 3) else 'type1'
+                        type_cfg = effective_type_settings.get(type_key, effective_type_settings.get('type1', {'enabled': True, 'wait': 60}))
+                        wait_seconds = int(type_cfg.get('wait', 60) or 0)
+                        if wait_seconds < 0:
+                            wait_seconds = 0
                         
-                        # Cập nhật trạng thái đang đợi 2FA
-                        self.root.after(0, lambda p=profile_name: self._update_profile_status(p, "⏰ Waiting 2FA"))
+                        auto_otp_done = False
+                        otp_attempted = False
                         
-                        # Countdown 60 giây
-                        for countdown in range(60, 0, -1):
-                            time.sleep(1)
-                            self.root.after(0, lambda c=countdown: self.status_label.config(
-                                text=f"Đợi nhập 2FA cho {profile_name}... ({c}s)"))
+                        if variant in (2, 3) and type_cfg.get('enabled', True):
+                            raw_line = account.get('raw_line')
+                            if raw_line:
+                                otp_attempted = True
+                                prefer_graph = (variant == 3)
+                                print(f"📫 [BULK-RUN] Thử tự động lấy mã 2FA Hotmail (type {variant}, timeout {wait_seconds}s, graph={prefer_graph})")
+                                try:
+                                    otp_ok, otp_code, otp_info = get_login_otp_from_hotmail(raw_line, prefer_graph=prefer_graph, timeout_sec=max(wait_seconds, 30) or 60)
+                                    if otp_ok and otp_code:
+                                        print(f"✅ [BULK-RUN] Lấy mã 2FA thành công: {otp_code}")
+                                        if result and hasattr(self.manager, '_input_verification_code'):
+                                            try:
+                                                auto_otp_done = self.manager._input_verification_code(result, otp_code)
+                                                if auto_otp_done:
+                                                    print(f"✅ [BULK-RUN] Đã tự động nhập mã 2FA")
+                                                    wait_seconds = max(5, min(wait_seconds, 15))
+                                                    self.root.after(0, lambda p=profile_name: self._update_profile_status(p, "🟢 2FA Auto"))
+                                            except Exception as otp_err:
+                                                print(f"⚠️ [BULK-RUN] Không thể tự nhập mã 2FA: {otp_err}")
+                                    else:
+                                        print(f"⚠️ [BULK-RUN] Không lấy được mã 2FA tự động (type {variant})")
+                                except Exception as otp_exception:
+                                    print(f"⚠️ [BULK-RUN] Lỗi khi tự động lấy mã 2FA: {otp_exception}")
                         
-                        print(f"⏰ [BULK-RUN] Timeout 2FA cho {profile_name}, chuyển sang profile tiếp theo")
+                        if variant == 1 and not type_cfg.get('enabled', True):
+                            wait_seconds = 0
+                        
+                        if wait_seconds > 0:
+                            status_label_text = f"Chờ xử lý sau đăng nhập cho {profile_name}... ({wait_seconds}s)"
+                            if otp_attempted and not auto_otp_done and variant in (2, 3):
+                                status_label_text = f"Đợi mã 2FA Hotmail cho {profile_name}... ({wait_seconds}s)"
+                            self.root.after(0, lambda text=status_label_text: self.status_label.config(text=text))
+                            wait_status = "⏰ Waiting 2FA" if variant in (2, 3) else "⏳ Waiting"
+                            self.root.after(0, lambda p=profile_name, s=wait_status: self._update_profile_status(p, s))
+                            
+                            for countdown in range(wait_seconds, 0, -1):
+                                time.sleep(1)
+                                self.root.after(0, lambda c=countdown, prof=profile_name, attempt=otp_attempted and not auto_otp_done: self.status_label.config(
+                                    text=(f"Đợi mã 2FA Hotmail cho {prof}... ({c}s)" if attempt else f"Chờ xử lý sau đăng nhập cho {prof}... ({c}s)")
+                                ))
+                        else:
+                            print(f"⏭️ [BULK-RUN] Bỏ qua thời gian chờ bổ sung cho {profile_name}")
                         
                     else:
                         print(f"❌ [BULK-RUN] {profile_name} thất bại sau {max_retries} lần thử")
@@ -6541,7 +6790,38 @@ testuser|testpass123
             return
         
         selected_profiles = [self.tree.item(item)['text'] for item in selection]
-        print(f"📺 [LIVESTREAM] Mở dialog cho {len(selected_profiles)} profiles")
+        
+        # Filter CHỈ profiles đã login
+        logged_in_profiles = [p for p in selected_profiles if self.manager.is_profile_logged_in(p)]
+        not_logged_in = [p for p in selected_profiles if p not in logged_in_profiles]
+        
+        print(f"📺 [LIVESTREAM] Selected: {len(selected_profiles)} profiles")
+        print(f"📺 [LIVESTREAM] Logged in: {len(logged_in_profiles)} profiles")
+        print(f"📺 [LIVESTREAM] Not logged in: {len(not_logged_in)} profiles")
+        
+        if not logged_in_profiles:
+            messagebox.showwarning(
+                "Không có profile đã login",
+                f"Tất cả {len(selected_profiles)} profiles đã chọn chưa login TikTok!\n\n"
+                "Vui lòng login TikTok cho profiles trước khi treo livestream."
+            )
+            return
+        
+        if not_logged_in:
+            # Cảnh báo có profiles chưa login
+            response = messagebox.askyesno(
+                "Cảnh báo",
+                f"Có {len(not_logged_in)} profiles chưa login:\n{', '.join(not_logged_in[:5])}"
+                f"{'...' if len(not_logged_in) > 5 else ''}\n\n"
+                f"Chỉ {len(logged_in_profiles)} profiles đã login sẽ được sử dụng.\n\n"
+                "Tiếp tục?"
+            )
+            if not response:
+                return
+        
+        # Chỉ sử dụng profiles đã login
+        selected_profiles = logged_in_profiles
+        print(f"📺 [LIVESTREAM] Mở dialog cho {len(selected_profiles)} profiles đã login")
         
         # Tạo dialog livestream với layout đẹp và dễ nhìn
         dialog = tk.Toplevel(self.root)
@@ -6715,6 +6995,25 @@ testuser|testpass123
                             font=('Segoe UI', 8), fg='#7f8c8d', bg='#f8f9fa', justify=tk.LEFT)
         info_label.pack(anchor=tk.W, padx=10, pady=(0, 10))
         
+        # Info box về chế độ ẩn
+        hidden_info_frame = tk.Frame(basic_scrollable_frame, bg='#e8f4f8', relief='solid', bd=1)
+        hidden_info_frame.pack(fill=tk.X, pady=(0, 15), padx=10)
+        
+        hidden_info_title = tk.Label(hidden_info_frame, 
+                                     text="ℹ️ Chế độ hiển thị Chrome:",
+                                     font=('Segoe UI', 9, 'bold'), fg='#2c3e50', bg='#e8f4f8')
+        hidden_info_title.pack(anchor=tk.W, padx=10, pady=(10, 5))
+        
+        hidden_info_text = tk.Label(hidden_info_frame, 
+                                    text="• Không tích 'Chế độ ẩn': Chrome hiển thị bình thường (dễ test)\n"
+                                         "• Tích 'Chế độ ẩn': Chrome tự động MINIMIZE (thu nhỏ xuống taskbar)\n"
+                                         "  → Cửa sổ ẩn hoàn toàn, không thấy trên màn hình ✓\n"
+                                         "  → Không dùng headless → View vẫn được tính đầy đủ ✓\n"
+                                         "  → Tiết kiệm tài nguyên, không gây chú ý",
+                                    font=('Segoe UI', 8), fg='#34495e', bg='#e8f4f8', 
+                                    justify=tk.LEFT)
+        hidden_info_text.pack(anchor=tk.W, padx=10, pady=(0, 10))
+        
         # Basic settings
         basic_settings_frame = tk.LabelFrame(basic_scrollable_frame, text="⚙️ Cài đặt cơ bản", 
                                            font=('Segoe UI', 10, 'bold'), fg='#2c3e50', bg='#f8f9fa',
@@ -6733,11 +7032,17 @@ testuser|testpass123
                                    font=('Segoe UI', 9), relief='solid', bd=1)
         max_viewers_entry.grid(row=0, column=1, sticky=tk.W, padx=(0, 20))
         
-        hidden_var = tk.BooleanVar(value=True)
-        hidden_check = tk.Checkbutton(basic_grid, text="Chế độ ẩn (Hidden)", 
+        hidden_var = tk.BooleanVar(value=False)  # Default: Hiển thị để test
+        hidden_check = tk.Checkbutton(basic_grid, text="🔇 Chế độ ẩn (Minimize - vẫn tính view)", 
                                     variable=hidden_var, font=('Segoe UI', 9), fg='#34495e', 
                                     bg='#f8f9fa', selectcolor='#3498db')
         hidden_check.grid(row=0, column=2, sticky=tk.W)
+        
+        # Tooltip giải thích
+        hidden_tooltip = tk.Label(basic_grid, 
+                                 text="💡 Tích = Chrome minimize xuống taskbar, không headless → View vẫn tính",
+                                 font=('Segoe UI', 8, 'italic'), fg='#7f8c8d', bg='#f8f9fa')
+        hidden_tooltip.grid(row=0, column=3, sticky=tk.W, padx=(10, 0))
         
         # Row 2: Auto-out time and Replace delay
         tk.Label(basic_grid, text="Thời gian auto-out (phút):", 
@@ -8599,13 +8904,19 @@ Bạn có muốn bắt đầu treo livestream?"""
                         # Launch profile to livestream (profiles are already logged in, no autofill needed)
                         print(f"📺 [LIVESTREAM] Launching {actual_profile_name} to livestream URL")
                         print(f"📺 [LIVESTREAM] URL: {url}")
-                        print(f"📺 [LIVESTREAM] Hidden mode: {hidden}")
+                        print(f"📺 [LIVESTREAM] Hidden mode: {hidden} (Type: {type(hidden)})")
                         print(f"📺 [LIVESTREAM] No autofill - profiles are already logged in")
+                        
+                        # ✅ DEBUG: Log hidden parameter
+                        if hidden:
+                            print(f"⚠️ [LIVESTREAM] [DEBUG] hidden=True → Chrome sẽ minimize xuống taskbar")
+                        else:
+                            print(f"✅ [LIVESTREAM] [DEBUG] hidden=False → Chrome sẽ hiển thị bình thường")
                         
                         success, result = self.manager.launch_chrome_profile(
                             actual_profile_name,
                             start_url=url,
-                            hidden=hidden,  # Always hidden for livestream
+                            hidden=hidden,  # Từ checkbox trong GUI
                             auto_login=False,  # No autofill needed
                             login_data=None  # No login data needed
                         )
@@ -12974,7 +13285,7 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
             self.log_proxy_status(f"❌ Error parsing proxy: {e}")
     
     def apply_proxy_input(self):
-        """Apply proxy to target profile by editing SwitchyOmega settings.json (no Chrome launch)."""
+        """Apply proxy to target profile by saving to profile_settings.json."""
         if not hasattr(self, 'parsed_proxy'):
             self.log_proxy_status("❌ Please parse proxy first")
             return
@@ -12985,27 +13296,40 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
             return
         
         try:
-            self.log_proxy_status(f"💾 Writing proxy to settings.json for: {target_profile}")
-            proxy_string = f"{self.parsed_proxy['server']}:{self.parsed_proxy['port']}:{self.parsed_proxy['username']}:{self.parsed_proxy['password']}"
-            success, message = self.manager.apply_proxy_via_settings_string(target_profile, proxy_string)
+            self.log_proxy_status(f"💾 Saving proxy to profile_settings.json for: {target_profile}")
             
-            if success:
-                self.log_proxy_status(f"✅ Proxy saved to SwitchyOmega for {target_profile}")
-                self.log_proxy_status(f"   {proxy_string}")
-                self.log_proxy_status("   Method: Direct settings.json update")
-                self.log_proxy_status(f"   Message: {message}")
-
-                # Immediately import into extension so it becomes active
-                self.log_proxy_status("[LAUNCH] Importing into extension to activate...")
-                imp_ok, imp_msg = self.manager.force_import_settings_into_extension(target_profile)
-                if imp_ok:
-                    self.log_proxy_status(f"✅ Activated in extension: {imp_msg}")
-                    self.log_proxy_status("   Verify at: chrome-extension://pfnededegaaopdmhkdmcofjmoldfiped/options.html#!/profile/proxy")
-                else:
-                    self.log_proxy_status(f"⚠️ Could not auto-activate: {imp_msg}")
+            # Get profile path
+            profile_path = os.path.join(os.getcwd(), "chrome_profiles", target_profile)
+            settings_file = os.path.join(profile_path, "profile_settings.json")
+            
+            # Load existing settings or create new
+            if os.path.exists(settings_file):
+                with open(settings_file, 'r', encoding='utf-8') as f:
+                    settings = json.load(f)
             else:
-                self.log_proxy_status(f"❌ Failed to save proxy for {target_profile}")
-                self.log_proxy_status(f"   Error: {message}")
+                settings = {}
+            
+            # Update proxy config
+            settings['proxy'] = {
+                'enabled': True,
+                'server': self.parsed_proxy['server'],
+                'port': self.parsed_proxy['port'],
+                'username': self.parsed_proxy['username'],
+                'password': self.parsed_proxy['password'],
+                'protocol': 'http'
+            }
+            
+            # Save settings
+            os.makedirs(profile_path, exist_ok=True)
+            with open(settings_file, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, indent=2, ensure_ascii=False)
+            
+            proxy_string = f"{self.parsed_proxy['server']}:{self.parsed_proxy['port']}:{self.parsed_proxy['username']}:{self.parsed_proxy['password']}"
+            self.log_proxy_status(f"✅ Proxy saved to profile_settings.json for {target_profile}")
+            self.log_proxy_status(f"   {proxy_string}")
+            self.log_proxy_status("   Method: Direct profile_settings.json")
+            self.log_proxy_status("   Proxy will be applied automatically on next Chrome launch")
+            self.log_proxy_status("   Extension will handle authentication automatically")
                 
         except Exception as e:
             self.log_proxy_status(f"❌ Error applying proxy: {e}")
@@ -13653,15 +13977,47 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
         try:
             import json
             import os
+            import configparser
+            
             data_file = os.path.join(os.getcwd(), "bulk_run_data.json")
             if os.path.exists(data_file):
                 with open(data_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 print(f"📂 [LOAD] Đã tải bulk run data: {len(data.get('accounts', ''))} ký tự")
+                
+                # Nếu không có API key trong bulk_run_data.json, load từ config.ini
+                if not data.get('omocaptcha_api_key'):
+                    try:
+                        config = configparser.ConfigParser()
+                        config_path = os.path.join(os.getcwd(), 'config.ini')
+                        if os.path.exists(config_path):
+                            config.read(config_path, encoding='utf-8')
+                            if config.has_section('CAPTCHA'):
+                                api_key = config.get('CAPTCHA', 'omocaptcha_api_key', fallback='')
+                                if api_key and api_key.strip():
+                                    data['omocaptcha_api_key'] = api_key.strip()
+                                    print(f"📂 [LOAD] Đã load OMOcaptcha API key từ config.ini")
+                    except Exception as e:
+                        print(f"⚠️ [LOAD] Không thể load API key từ config.ini: {e}")
+                
                 return data
             else:
                 print("📂 [LOAD] Chưa có file bulk run data")
-                return {}
+                # Load API key từ config.ini nếu file bulk_run_data.json không tồn tại
+                data = {}
+                try:
+                    config = configparser.ConfigParser()
+                    config_path = os.path.join(os.getcwd(), 'config.ini')
+                    if os.path.exists(config_path):
+                        config.read(config_path, encoding='utf-8')
+                        if config.has_section('CAPTCHA'):
+                            api_key = config.get('CAPTCHA', 'omocaptcha_api_key', fallback='')
+                            if api_key and api_key.strip():
+                                data['omocaptcha_api_key'] = api_key.strip()
+                                print(f"📂 [LOAD] Đã load OMOcaptcha API key từ config.ini")
+                except Exception as e:
+                    print(f"⚠️ [LOAD] Không thể load API key từ config.ini: {e}")
+                return data
         except Exception as e:
             print(f"⚠️ [LOAD] Lỗi tải bulk run data: {e}")
             return {}

@@ -31,6 +31,22 @@ def run_livestream_profiles(
     if not start_url or not start_url.strip():
         print("[ERROR] [LIVESTREAM] start_url is required!")
         return [(p, False, "No start_url provided") for p in profile_names]
+    
+    # ✅ FILTER: Chỉ cho phép profiles đã login
+    logged_in_profiles = [p for p in profile_names if manager.is_profile_logged_in(p)]
+    not_logged_in = [p for p in profile_names if p not in logged_in_profiles]
+    
+    if not_logged_in:
+        print(f"[WARNING] [LIVESTREAM] {len(not_logged_in)} profile(s) chưa login, bỏ qua: {not_logged_in[:5]}{'...' if len(not_logged_in) > 5 else ''}")
+    
+    if not logged_in_profiles:
+        print("[ERROR] [LIVESTREAM] Không có profile nào đã login!")
+        return [(p, False, "Profile chưa login") for p in profile_names]
+    
+    print(f"[LIVESTREAM] [FILTER] Sử dụng {len(logged_in_profiles)}/{len(profile_names)} profiles đã login")
+    
+    # Sử dụng chỉ profiles đã login
+    profile_names = logged_in_profiles
 
     results = []
     
@@ -134,9 +150,39 @@ def run_livestream_advanced(
             'replacements': 0,
             'total_launched': 0,
         }
+    
+    # ✅ FILTER: Chỉ cho phép profiles đã login
+    logged_in_profiles = [p for p in profile_names if manager.is_profile_logged_in(p)]
+    not_logged_in = [p for p in profile_names if p not in logged_in_profiles]
+    
+    if not_logged_in:
+        print(f"[WARNING] [LIVESTREAM-ADV] {len(not_logged_in)} profile(s) chưa login, bỏ qua: {not_logged_in[:5]}{'...' if len(not_logged_in) > 5 else ''}")
+    
+    if not logged_in_profiles:
+        print("[ERROR] [LIVESTREAM-ADV] Không có profile nào đã login!")
+        return {
+            'successful': [],
+            'failed': [(p, 'Profile chưa login') for p in profile_names],
+            'replacements': 0,
+            'total_launched': 0,
+        }
+    
+    print(f"[LIVESTREAM-ADV] [FILTER] Sử dụng {len(logged_in_profiles)}/{len(profile_names)} profiles đã login")
+    
+    # Sử dụng chỉ profiles đã login
+    profile_names = logged_in_profiles
 
     active_viewers = {}  # profile_name -> {'start_time': float, 'retry_count': int}
     profile_pool = list(profile_names)
+    # Skip profiles that are currently running (do not reuse until closed)
+    try:
+        profile_pool = [p for p in profile_pool if not getattr(manager, 'is_profile_in_use', lambda x: False)(p)]
+        if len(profile_pool) < len(profile_names):
+            skipped = set(profile_names) - set(profile_pool)
+            if skipped:
+                print(f"[LIVESTREAM] [SKIP] {len(skipped)} profile(s) already running, skipped: {', '.join(list(skipped)[:5])}{'...' if len(skipped)>5 else ''}")
+    except Exception:
+        pass
     successful = []
     failed = []
     replacements = 0
@@ -145,6 +191,13 @@ def run_livestream_advanced(
     def _launch_one(profile_name: str, retry_count: int = 0):
         nonlocal total_launched
         try:
+            # If profile turned running since last check, skip
+            try:
+                if getattr(manager, 'is_profile_in_use', lambda x: False)(profile_name):
+                    failed.append((profile_name, 'in use'))
+                    return False
+            except Exception:
+                pass
             total_launched += 1
             ok = False
             res = None
@@ -231,6 +284,10 @@ def run_livestream_advanced(
             # Top-up to maintain max_viewers
             while len(active_viewers) < max_viewers and profile_pool:
                 np = profile_pool.pop(0)
+                # Skip if now in-use
+                if getattr(manager, 'is_profile_in_use', lambda x: False)(np):
+                    failed.append((np, 'in use'))
+                    continue
                 _launch_one(np)
 
             # Cleanup/memory optimization

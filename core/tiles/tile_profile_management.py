@@ -133,6 +133,60 @@ def create_profile_with_extension(manager, profile_name, source_profile="Default
         return False, f"Error creating profile with extension: {str(e)}"
 
 
+def parse_proxy_string(proxy_string):
+    """
+    Parse proxy string into components.
+    
+    Supported formats:
+    - http://server:port:username:password
+    - socks4://server:port:username:password
+    - socks5://server:port:username:password
+    - server:port:username:password (defaults to http)
+    - http://server:port (no auth)
+    - server:port (no auth, defaults to http)
+    
+    Returns: dict with keys: protocol, server, port, username, password
+    """
+    try:
+        protocol = 'http'  # Default
+        username = ''
+        password = ''
+        
+        # Check if protocol is specified
+        if '://' in proxy_string:
+            parts = proxy_string.split('://', 1)
+            protocol = parts[0].lower()  # http, socks4, socks5
+            rest = parts[1]
+        else:
+            rest = proxy_string
+        
+        # Parse rest: server:port:username:password or server:port
+        parts = rest.split(':')
+        
+        if len(parts) >= 4:
+            # server:port:username:password
+            server = parts[0]
+            port = parts[1]
+            username = parts[2]
+            password = ':'.join(parts[3:])  # In case password contains ':'
+        elif len(parts) >= 2:
+            # server:port (no auth)
+            server = parts[0]
+            port = parts[1]
+        else:
+            raise ValueError(f"Invalid proxy format: {proxy_string}")
+        
+        return {
+            'protocol': protocol,
+            'server': server,
+            'port': port,
+            'username': username,
+            'password': password
+        }
+    except Exception as e:
+        raise ValueError(f"Failed to parse proxy '{proxy_string}': {e}")
+
+
 def create_profiles_bulk(manager, base_name, quantity, version, use_random_format, proxy_list, use_random_hardware, use_random_ua=False):
     '''
     Create multiple profiles in bulk
@@ -141,6 +195,13 @@ def create_profiles_bulk(manager, base_name, quantity, version, use_random_forma
         print(f"[BULK-CREATE] 🚀 Creating {quantity} profiles with Chrome version: {version}")
         print(f"[BULK-CREATE] 📋 Settings: Random format={use_random_format}, Random hardware={use_random_hardware}, Random UA={use_random_ua}")
         print(f"[BULK-CREATE] 🌐 Using {len(proxy_list)} proxies")
+        
+        # Validate version
+        if not version or not version.strip():
+            print(f"[ERROR] [BULK-CREATE] Chrome version is required but not provided!")
+            return False, "Chrome version is required"
+        
+        version = version.strip()
         created_profiles = []
         for i in range(quantity):
             try:
@@ -152,17 +213,96 @@ def create_profiles_bulk(manager, base_name, quantity, version, use_random_forma
                 else:
                     profile_name = f"{base_name}_{i+1:04d}"
                 print(f"[BULK-CREATE] Creating profile {i+1}/{quantity}: {profile_name}")
+                
                 # Create profile using existing method
                 success, message = clone_chrome_profile(manager, profile_name)
                 if not success:
                     print(f"[ERROR] [BULK-CREATE] Failed to create {profile_name}: {message}")
                     continue
-                # Optionally: apply hardware, UA, proxy, extension (bổ sung thêm nếu muốn tách)
+                
+                # Set Chrome version in profile_settings.json
+                profile_path = os.path.join(manager.profiles_dir, profile_name)
+                settings_path = os.path.join(profile_path, 'profile_settings.json')
+                
+                # Load existing settings or create new
+                settings_data = {}
+                if os.path.exists(settings_path):
+                    try:
+                        with open(settings_path, 'r', encoding='utf-8') as f:
+                            settings_data = json.load(f)
+                    except Exception as e:
+                        print(f"[WARNING] [BULK-CREATE] Could not read existing settings for {profile_name}: {e}")
+                
+                # Set browser version in software section
+                if 'software' not in settings_data:
+                    settings_data['software'] = {}
+                settings_data['software']['browser_version'] = version
+                # Also set at top level for compatibility
+                settings_data['browser_version'] = version
+                
+                # Apply proxy if available
+                if proxy_list and i < len(proxy_list):
+                    proxy_string = proxy_list[i]
+                    try:
+                        # Parse proxy using dedicated function
+                        proxy_config = parse_proxy_string(proxy_string)
+                        
+                        # Save proxy to settings
+                        settings_data['proxy'] = {
+                            'enabled': True,
+                            'server': proxy_config['server'],
+                            'port': proxy_config['port'],
+                            'username': proxy_config['username'],
+                            'password': proxy_config['password'],
+                            'protocol': proxy_config['protocol']
+                        }
+                        print(f"[SUCCESS] [BULK-CREATE] Applied {proxy_config['protocol']} proxy {proxy_config['server']}:{proxy_config['port']} to {profile_name}")
+                    except Exception as e:
+                        print(f"[WARNING] [BULK-CREATE] Could not parse proxy for {profile_name}: {e}")
+                elif proxy_list:
+                    print(f"[INFO] [BULK-CREATE] No proxy for {profile_name} (index {i} >= {len(proxy_list)} proxies)")
+                
+                # Save settings
+                try:
+                    with open(settings_path, 'w', encoding='utf-8') as f:
+                        json.dump(settings_data, f, indent=2, ensure_ascii=False)
+                    print(f"[SUCCESS] [BULK-CREATE] Saved settings for {profile_name}")
+                except Exception as e:
+                    print(f"[WARNING] [BULK-CREATE] Could not save settings for {profile_name}: {e}")
+                
+                # Optionally: apply hardware, UA, extension (bổ sung thêm nếu muốn tách)
                 created_profiles.append(profile_name)
             except Exception as e:
                 print(f"[ERROR] [BULK-CREATE] Error: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 continue
         return True, created_profiles
     except Exception as e:
         print(f"[ERROR] [BULK-CREATE] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False, str(e)
+
+
+def is_profile_in_use(manager, profile_name_or_path):
+    """
+    Detect if a Chrome profile is currently running (has lock/marker files).
+    Returns True if running, False otherwise.
+    """
+    try:
+        if os.path.isabs(profile_name_or_path):
+            profile_path = profile_name_or_path
+        else:
+            profile_path = manager.get_profile_path(profile_name_or_path)
+        if not profile_path or not os.path.exists(profile_path):
+            return False
+        markers = ('DevToolsActivePort','SingletonLock','SingletonCookie','SingletonSocket','RunningChromeVersion')
+        for base in (profile_path, os.path.join(profile_path, 'Default')):
+            for fname in markers:
+                fpath = os.path.join(base, fname)
+                if os.path.exists(fpath):
+                    return True
+        return False
+    except Exception:
+        return False

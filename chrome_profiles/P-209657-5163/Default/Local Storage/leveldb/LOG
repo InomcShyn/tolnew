@@ -1,8 +1,0 @@
-2025/11/02-16:53:34.740 3f04 Reusing MANIFEST C:\Users\admin\tolnew\chrome_profiles\P-209657-5163\Default\Local Storage\leveldb/MANIFEST-000001
-2025/11/02-16:53:34.743 3f04 Recovering log #6
-2025/11/02-16:53:34.744 3f04 Level-0 table #8: started
-2025/11/02-16:53:34.782 3f04 Level-0 table #8: 127019 bytes OK
-2025/11/02-16:53:34.783 3f04 Recovering log #8
-2025/11/02-16:53:34.789 3f04 Reusing old log C:\Users\admin\tolnew\chrome_profiles\P-209657-5163\Default\Local Storage\leveldb/000008.log 
-2025/11/02-16:53:34.792 3f04 Delete type=0 #6
-2025/11/02-16:53:34.792 3f04 Delete type=2 #9
