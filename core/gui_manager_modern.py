@@ -1,3 +1,11 @@
+﻿# ============================================================
+# PLAYWRIGHT BACKEND - ASYNC SUPPORT
+# ============================================================
+# This GUI uses Playwright backend with async/await support
+# All browser operations run in a separate event loop
+# UI remains responsive during browser operations
+# ============================================================
+
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
 import threading
@@ -6,8 +14,16 @@ import os
 import json
 import random
 import shutil
+import asyncio
+import sys
+from datetime import datetime
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import Playwright manager
 from core.chrome_manager import ChromeProfileManager
-from core.tiles.tile_email_otp import parse_account_line, get_login_otp_from_hotmail
+from core.tiles.tile_email_otp import parse_account_line, get_login_otp_from_hotmail, get_otp_from_unlimitmail_api
 from core.tiles.tile_omocaptcha import (
     get_omocaptcha_extension_id,
     install_omocaptcha_extension_local,
@@ -15,10 +31,18 @@ from core.tiles.tile_omocaptcha import (
     test_omocaptcha_setup,
     setup_omocaptcha_for_bulk_run
 )
+from core.utils.proxy_utils import parse_proxy_list
+from core.tiktok_archived_data import TikTokArchivedDataManager
+from core.tiktok_archived_ui import open_archived_data_dialog
 
 # NKT configuration đã được xóa
 
 class ModernChromeProfileManager:
+    """
+    Modern Chrome Profile Manager with Playwright Backend
+    
+    Migrated from Selenium to Playwright while keeping 100% UI compatibility
+    """
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Browser Manager - Advanced Profile Management")
@@ -30,6 +54,10 @@ class ModernChromeProfileManager:
         
         self.manager = ChromeProfileManager()
         self.drivers = {}
+        
+        # Initialize archived data manager
+        # Use os.getcwd() instead of self.manager.base_dir (which doesn't exist)
+        self.archived_manager = TikTokArchivedDataManager(os.getcwd())
         
         # NKT Configuration đã được xóa
         
@@ -43,10 +71,32 @@ class ModernChromeProfileManager:
         self.setup_ui()
         self.refresh_profiles()
         
+        # Setup async event loop for Playwright
+        self.loop = asyncio.new_event_loop()
+        
+        def run_loop():
+            asyncio.set_event_loop(self.loop)
+            self.loop.run_forever()
+        
+        self.loop_thread = threading.Thread(target=run_loop, daemon=True)
+        self.loop_thread.start()
+
+        
         # Bind events cho tab bar tự động
         self.setup_auto_tabbar()
         
         
+    
+    
+    def run_async(self, coro):
+        """Run async coroutine in event loop"""
+        future = asyncio.run_coroutine_threadsafe(coro, self.loop)
+        try:
+            return future.result(timeout=30)
+        except Exception as e:
+            print(f"Async error: {e}")
+            return None
+
     def setup_modern_style(self):
         """Thiết lập style hiện đại cho ứng dụng"""
         style = ttk.Style()
@@ -495,16 +545,32 @@ class ModernChromeProfileManager:
         top = tk.Toplevel(self.root)
         top.title("Tạo theo số lượng")
         top.grab_set()
-        top.geometry("560x420")
+        top.geometry("600x500")
         frame = ttk.Frame(top, padding=15)
         frame.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(frame, text="Số lượng").grid(row=0, column=0, sticky='w')
+        # Tên cơ sở (base name)
+        ttk.Label(frame, text="Tên cơ sở (Base name)").grid(row=0, column=0, sticky='w')
+        base_name_var = tk.StringVar(value="X")
+        base_name_entry = ttk.Entry(frame, textvariable=base_name_var)
+        base_name_entry.grid(row=0, column=1, sticky='we', padx=8)
+        ttk.Label(frame, text="(Ví dụ: X → X-001, X-002...)", font=("Segoe UI", 8), foreground="gray").grid(row=0, column=2, sticky='w')
+
+        # Số lượng
+        ttk.Label(frame, text="Số lượng").grid(row=1, column=0, sticky='w', pady=(8,0))
         qty_var = tk.IntVar(value=1)
         qty_entry = ttk.Entry(frame, textvariable=qty_var)
-        qty_entry.grid(row=0, column=1, sticky='we', padx=8)
+        qty_entry.grid(row=1, column=1, sticky='we', padx=8, pady=(8,0))
 
-        ttk.Label(frame, text="Phiên bản trình duyệt").grid(row=1, column=0, sticky='w', pady=(8,0))
+        # Số bắt đầu (tự động tìm nếu để trống)
+        ttk.Label(frame, text="Số bắt đầu (tùy chọn)").grid(row=2, column=0, sticky='w', pady=(8,0))
+        start_var = tk.StringVar(value="")
+        start_entry = ttk.Entry(frame, textvariable=start_var)
+        start_entry.grid(row=2, column=1, sticky='we', padx=8, pady=(8,0))
+        ttk.Label(frame, text="(Để trống = tự động)", font=("Segoe UI", 8), foreground="gray").grid(row=2, column=2, sticky='w', pady=(8,0))
+
+        # Phiên bản trình duyệt
+        ttk.Label(frame, text="Phiên bản trình duyệt").grid(row=3, column=0, sticky='w', pady=(8,0))
         version_var = tk.StringVar(value='139.0.7258.139')
         chrome_version_options = [
             '139.0.7258.139', '137.0.7151.41', '135.0.7049.42', '134.0.6998.89',
@@ -512,13 +578,14 @@ class ModernChromeProfileManager:
             '121.0.6167.140', '119.0.6045.124', '115.0.5790.75', '111.0.5563.50',
             '107.0.5304.8', '106.0.5249.119'
         ]
-        version_combo = ttk.Combobox(frame, textvariable=version_var, values=chrome_version_options, state='readonly')
-        version_combo.grid(row=1, column=1, sticky='we', padx=8, pady=(8,0))
+        version_combo = ttk.Combobox(frame, textvariable=version_var, values=chrome_version_options, state='readonly', height=15)
+        version_combo.grid(row=3, column=1, sticky='we', padx=8, pady=(8,0))
 
-        ttk.Label(frame, text="Nhập danh sách proxy | Định dạng: với http IP:Port:User:Pass, Với socks5: socks5://IP:Port:User:Pass\nHủy proxy (Dùng IP máy) nhập: null").grid(row=2, column=0, columnspan=2, sticky='w', pady=(12,4))
+        # Proxy list
+        ttk.Label(frame, text="Nhập danh sách proxy | Định dạng: với http IP:Port:User:Pass, Với socks5: socks5://IP:Port:User:Pass\nHủy proxy (Dùng IP máy) nhập: null").grid(row=4, column=0, columnspan=3, sticky='w', pady=(12,4))
         proxy_text = tk.Text(frame, height=10)
-        proxy_text.grid(row=3, column=0, columnspan=2, sticky='nsew')
-        frame.rowconfigure(3, weight=1)
+        proxy_text.grid(row=5, column=0, columnspan=3, sticky='nsew')
+        frame.rowconfigure(5, weight=1)
         frame.columnconfigure(1, weight=1)
 
         def on_confirm():
@@ -527,28 +594,38 @@ class ModernChromeProfileManager:
                 if qty <= 0:
                     messagebox.showerror("Lỗi", "Số lượng phải > 0")
                     return
+                
+                base_name = base_name_var.get().strip()
+                if not base_name:
+                    messagebox.showerror("Lỗi", "Vui lòng nhập tên cơ sở")
+                    return
+                
                 version = version_var.get().strip()
-                base_name = f"Profile_{int(time.time())}"
-                ok, result = self.manager.create_profiles_bulk(base_name, qty, version, False, proxy_list, False)
+                
+                # Lấy danh sách proxy từ text widget
+                proxies = [l.strip() for l in proxy_text.get('1.0', tk.END).splitlines() if l.strip()]
+                
+                # Lấy số bắt đầu (nếu có)
+                start_num = None
+                start_str = start_var.get().strip()
+                if start_str:
+                    try:
+                        start_num = int(start_str)
+                    except:
+                        messagebox.showerror("Lỗi", "Số bắt đầu phải là số nguyên")
+                        return
+                
+                # Gọi create_profiles_bulk với format đúng: base_name-001, base_name-002...
+                # use_random_format=False để dùng format {base_name}-{number}
+                # use_random_hardware=False, use_random_ua=False cho bulk create đơn giản
+                ok, result = self.manager.create_profiles_bulk(
+                    base_name, qty, version, False, proxies, False, False, start_num, None
+                )
                 if ok:
                     names = result
-                    proxies = [l.strip() for l in proxy_text.get('1.0', tk.END).splitlines() if l.strip()]
-                    for idx, name in enumerate(names):
-                        if idx < len(proxies):
-                            try:
-                                profile_path = os.path.join(self.manager.profiles_dir, name)
-                                settings_path = os.path.join(profile_path, 'profile_settings.json')
-                                data = {}
-                                if os.path.exists(settings_path):
-                                    with open(settings_path, 'r', encoding='utf-8') as f:
-                                        data = json.load(f)
-                                data.setdefault('network', {})['proxy'] = proxies[idx]
-                                with open(settings_path, 'w', encoding='utf-8') as f:
-                                    json.dump(data, f, ensure_ascii=False, indent=2)
-                            except Exception:
-                                pass
                     self.refresh_profiles()
-                    messagebox.showinfo("Thành công", f"Đã tạo {len(names)} profile")
+                    messagebox.showinfo("Thành công", f"Đã tạo {len(names)} profile:\n{', '.join(names[:5])}" + 
+                                      (f"\n... và {len(names)-5} profile khác" if len(names) > 5 else ""))
                     top.destroy()
                 else:
                     messagebox.showerror("Lỗi", str(result))
@@ -556,7 +633,7 @@ class ModernChromeProfileManager:
                 messagebox.showerror("Lỗi", str(e))
 
         btn_frame = ttk.Frame(frame)
-        btn_frame.grid(row=4, column=0, columnspan=2, sticky='e', pady=10)
+        btn_frame.grid(row=6, column=0, columnspan=3, sticky='e', pady=10)
         ttk.Button(btn_frame, text="Đồng ý", command=on_confirm).pack(side=tk.RIGHT)
         ttk.Button(btn_frame, text="Hủy", command=top.destroy).pack(side=tk.RIGHT, padx=8)
 
@@ -629,6 +706,9 @@ class ModernChromeProfileManager:
         ttk.Button(control_frame, text="🔄 Làm mới", 
                   style='Modern.TButton',
                   command=self.refresh_profiles).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(control_frame, text="🌐 Set Proxy", 
+                  style='Modern.TButton',
+                  command=self.show_set_proxy_dialog).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(control_frame, text="[LAUNCH] Chạy hàng loạt", 
                   style='Modern.TButton',
                   command=self.bulk_run_selected).pack(side=tk.LEFT, padx=(0, 8))
@@ -672,18 +752,24 @@ class ModernChromeProfileManager:
         table_frame.pack(fill=tk.BOTH, expand=True)
         
         # Treeview với style hiện đại
-        columns = ("Profile", "Thời gian đăng nhập", "Hành động")
+        columns = ("Profile", "Thời gian đăng nhập", "Proxy")
         self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", 
                                 style='Modern.Treeview', height=18)
         
-        # Cấu hình cột với width phù hợp hơn
-        self.tree.heading("Profile", text="👤 Profile")
-        self.tree.heading("Thời gian đăng nhập", text="⏰ Thời gian đăng nhập")
-        self.tree.heading("Hành động", text="🎯 Hành động")
+        # Biến lưu trạng thái sắp xếp
+        self.sort_by_name_asc = True  # True = A-Z, False = Z-A
+        self.sort_by_time_asc = False  # True = cũ nhất trước, False = mới nhất trước
+        
+        # Cấu hình cột với width phù hợp hơn và nút sắp xếp
+        self.tree.heading("Profile", text="👤 Profile ⬍", 
+                         command=lambda: self.sort_by_column("Profile"))
+        self.tree.heading("Thời gian đăng nhập", text="⏰ Thời gian đăng nhập ⬍", 
+                         command=lambda: self.sort_by_column("Thời gian đăng nhập"))
+        self.tree.heading("Proxy", text="🌐 Proxy")
         
         self.tree.column("Profile", width=300, minwidth=250)
         self.tree.column("Thời gian đăng nhập", width=250, minwidth=200)
-        self.tree.column("Hành động", width=200, minwidth=150)
+        self.tree.column("Proxy", width=300, minwidth=200)
         
         # Scrollbar với style đẹp hơn
         scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
@@ -695,7 +781,7 @@ class ModernChromeProfileManager:
         # Context menu
         self.setup_context_menu()
         
-        # Thêm nút để xóa session đăng nhập
+        # Thêm nút để xóa session đăng nhập và sắp xếp
         session_frame = ttk.Frame(self.content_frame, style='Modern.TFrame')
         session_frame.pack(fill=tk.X, pady=(10, 0))
         
@@ -709,7 +795,31 @@ class ModernChromeProfileManager:
         
         ttk.Button(session_frame, text="🎮 Master Control Mode", 
                   command=self.show_master_control_dialog,
-                  style='Modern.TButton').pack(side=tk.LEFT)
+                  style='Modern.TButton').pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Dropdown sắp xếp
+        ttk.Label(session_frame, text="📊 Sắp xếp:", 
+                 style='Modern.TLabel').pack(side=tk.LEFT, padx=(20, 5))
+        
+        self.sort_mode_var = tk.StringVar(value="name")
+        sort_options = [
+            ("Theo tên (A-Z, 0001-9999)", "name"),
+            ("Theo thời gian mở (mới nhất)", "time_recent"),
+            ("Theo thời gian mở (cũ nhất)", "time_oldest")
+        ]
+        
+        sort_combo = ttk.Combobox(session_frame, 
+                                 textvariable=self.sort_mode_var,
+                                 values=[opt[0] for opt in sort_options],
+                                 state="readonly",
+                                 width=30)
+        sort_combo.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Map display text to value
+        self.sort_mode_map = {opt[0]: opt[1] for opt in sort_options}
+        
+        # Bind change event
+        sort_combo.bind('<<ComboboxSelected>>', lambda e: self.refresh_profiles())
         
         # Status bar với style đẹp hơn
         status_frame = ttk.Frame(self.content_frame, style='Modern.TFrame')
@@ -1770,25 +1880,59 @@ class ModernChromeProfileManager:
                 self.proxy_status.insert(tk.END, f"👤 Username: {proxy_config['username']}\n")
             self.proxy_status.insert(tk.END, "\n⏳ Please wait while configuring SwitchyOmega...\n")
             
-            # Configure proxy in background thread
+            # ✅ SAVE PROXY TO CONFIG.INI (for Playwright)
+            # Build proxy string
+            proxy_type = proxy_config['proxy_type'].lower()
+            proxy_server = proxy_config['proxy_server']
+            proxy_port = proxy_config['proxy_port']
+            username = proxy_config.get('username', '')
+            password = proxy_config.get('password', '')
+            
+            if username and password:
+                proxy_string = f"{proxy_type}://{username}:{password}@{proxy_server}:{proxy_port}"
+            else:
+                proxy_string = f"{proxy_type}://{proxy_server}:{proxy_port}"
+            
+            # Save to config.ini
+            try:
+                self.proxy_status.insert(tk.END, f"\n💾 Saving proxy to config.ini...\n")
+                success_save = self.manager.proxy_mgr.set_profile_proxy(profile_name, proxy_string)
+                
+                if success_save:
+                    self.proxy_status.insert(tk.END, f"✅ Proxy saved to config.ini\n")
+                    self.proxy_status.insert(tk.END, f"📋 Proxy string: {proxy_string}\n")
+                    
+                    # Refresh tree to show new proxy
+                    try:
+                        self.refresh_profiles()
+                    except:
+                        pass
+                else:
+                    self.proxy_status.insert(tk.END, f"⚠️  Warning: Could not save proxy to config.ini\n")
+            except Exception as save_err:
+                self.proxy_status.insert(tk.END, f"⚠️  Warning: Error saving proxy: {save_err}\n")
+            
+            # Configure proxy in background thread (for SwitchyOmega extension)
             def configure_thread():
                 try:
                     success, message = self.manager.configure_switchyomega_proxy(profile_name, proxy_config)
                     
                     def update_ui():
                         if success:
-                            self.proxy_status.insert(tk.END, f"✅ {message}\n")
-                            self.proxy_status.insert(tk.END, f"🌐 Proxy configured successfully!\n")
-                            self.proxy_status.insert(tk.END, f"💡 You can now use the proxy in Chrome\n")
+                            self.proxy_status.insert(tk.END, f"\n✅ {message}\n")
+                            self.proxy_status.insert(tk.END, f"🌐 SwitchyOmega configured successfully!\n")
+                            self.proxy_status.insert(tk.END, f"💡 Proxy is now ready for both Playwright and Chrome extension\n")
                         else:
-                            self.proxy_status.insert(tk.END, f"❌ {message}\n")
-                            self.proxy_status.insert(tk.END, f"🔧 Please check your proxy settings\n")
+                            self.proxy_status.insert(tk.END, f"\n⚠️  {message}\n")
+                            self.proxy_status.insert(tk.END, f"💡 Proxy saved to config.ini but SwitchyOmega config failed\n")
+                            self.proxy_status.insert(tk.END, f"🔧 You can still use proxy with Playwright\n")
                     
                     self.root.after(0, update_ui)
                     
                 except Exception as e:
                     def update_ui():
-                        self.proxy_status.insert(tk.END, f"❌ Error: {str(e)}\n")
+                        self.proxy_status.insert(tk.END, f"\n⚠️  SwitchyOmega error: {str(e)}\n")
+                        self.proxy_status.insert(tk.END, f"💡 Proxy saved to config.ini and will work with Playwright\n")
                     self.root.after(0, update_ui)
             
             threading.Thread(target=configure_thread, daemon=True).start()
@@ -3224,6 +3368,103 @@ class ModernChromeProfileManager:
             print(f"❌ [LOGIN-TIME] Error getting login time for {profile_name}: {e}")
             return "Lỗi"
     
+    def sort_by_column(self, column):
+        """Sắp xếp profiles theo cột được chọn"""
+        if column == "Profile":
+            # Toggle sắp xếp theo tên
+            self.sort_by_name_asc = not self.sort_by_name_asc
+            # Cập nhật icon
+            icon = "⬆" if self.sort_by_name_asc else "⬇"
+            self.tree.heading("Profile", text=f"👤 Profile {icon}")
+            # Reset icon cột khác
+            self.tree.heading("Thời gian đăng nhập", text="⏰ Thời gian đăng nhập ⬍")
+        elif column == "Thời gian đăng nhập":
+            # Toggle sắp xếp theo thời gian
+            self.sort_by_time_asc = not self.sort_by_time_asc
+            # Cập nhật icon
+            icon = "⬆" if self.sort_by_time_asc else "⬇"
+            self.tree.heading("Thời gian đăng nhập", text=f"⏰ Thời gian đăng nhập {icon}")
+            # Reset icon cột khác
+            self.tree.heading("Profile", text="👤 Profile ⬍")
+        
+        # Refresh để áp dụng sắp xếp
+        self.refresh_profiles()
+    
+    def _sort_profiles(self, profiles_with_time):
+        """
+        Sắp xếp profiles theo mode đã chọn
+        
+        Args:
+            profiles_with_time: List of dict với keys: profile, is_logged_in, is_running, login_time, mod_time
+        
+        Returns:
+            Sorted list
+        """
+        # Kiểm tra xem đang sắp xếp theo cột nào
+        if hasattr(self, 'sort_by_name_asc') and self.tree.heading("Profile")['text'].endswith(('⬆', '⬇')):
+            # Sắp xếp theo tên profile
+            import re
+            
+            def get_sort_key(x):
+                profile = x['profile']
+                # Kiểm tra format: chỉ có số (001, 002, ...)
+                if re.match(r'^\d+$', profile):
+                    return (0, '', int(profile))
+                # Format: {base_name}-{number} (X-001, MyName-123, etc.)
+                match = re.match(r'^(.+?)-(\d+)$', profile)
+                if match:
+                    base_name = match.group(1)
+                    number = int(match.group(2))
+                    return (1, base_name.lower(), number)
+                else:
+                    # Profile không có format chuẩn
+                    return (2, profile.lower(), 0)
+            
+            profiles_with_time.sort(key=get_sort_key, reverse=not self.sort_by_name_asc)
+            
+        elif hasattr(self, 'sort_by_time_asc') and self.tree.heading("Thời gian đăng nhập")['text'].endswith(('⬆', '⬇')):
+            # Sắp xếp theo thời gian đăng nhập
+            profiles_with_time.sort(key=lambda x: x['mod_time'], reverse=not self.sort_by_time_asc)
+        else:
+            # Sắp xếp mặc định: đang chạy -> đã đăng nhập -> theo tên profile
+            import re
+            
+            def get_default_sort_key(x):
+                profile = x['profile']
+                # Kiểm tra format: chỉ có số (001, 002, ...)
+                if re.match(r'^\d+$', profile):
+                    return (
+                        not x['is_running'],
+                        not x['is_logged_in'],
+                        0,  # Nhóm số thuần
+                        '',
+                        int(profile)
+                    )
+                # Format: {base_name}-{number}
+                match = re.match(r'^(.+?)-(\d+)$', profile)
+                if match:
+                    base_name = match.group(1)
+                    number = int(match.group(2))
+                    return (
+                        not x['is_running'],
+                        not x['is_logged_in'],
+                        1,  # Nhóm có base name
+                        base_name.lower(),
+                        number
+                    )
+                else:
+                    return (
+                        not x['is_running'],
+                        not x['is_logged_in'],
+                        2,  # Nhóm khác
+                        profile.lower(),
+                        0
+                    )
+            
+            profiles_with_time.sort(key=get_default_sort_key)
+        
+        return profiles_with_time
+    
     def refresh_profiles(self):
         """Làm mới danh sách profiles"""
         try:
@@ -3271,13 +3512,8 @@ class ModernChromeProfileManager:
                     'mod_time': mod_time
                 })
             
-            # Sắp xếp theo thời gian hoạt động: đang chạy -> đã đăng nhập -> chưa đăng nhập
-            # Trong mỗi nhóm, sắp xếp theo thời gian modification (mới nhất lên đầu)
-            profiles_with_time.sort(key=lambda x: (
-                not x['is_running'],  # Đang chạy lên đầu
-                not x['is_logged_in'],  # Đã đăng nhập lên trước chưa đăng nhập
-                -x['mod_time']  # Mới nhất lên đầu (dấu - để reverse)
-            ))
+            # Sắp xếp profiles theo mode đã chọn
+            profiles_with_time = self._sort_profiles(profiles_with_time)
             
             # Thêm profiles đã sắp xếp vào tree
             for profile_data in profiles_with_time:
@@ -3288,12 +3524,18 @@ class ModernChromeProfileManager:
                 
                 if is_running:
                     status = f"Đang chạy | {login_time}"
-                    action = "Dừng"
                 else:
                     status = login_time
-                    action = "Starting"
                 
-                self.tree.insert("", "end", text=profile, values=(profile, status, action))
+                # Get proxy for this profile
+                proxy = self.manager.proxy_mgr.get_profile_proxy(profile)
+                if proxy:
+                    # Truncate proxy if too long
+                    proxy_display = proxy if len(proxy) <= 40 else proxy[:37] + "..."
+                else:
+                    proxy_display = "No proxy"
+                
+                self.tree.insert("", "end", text=profile, values=(profile, status, proxy_display))
             
             # Cập nhật thống kê
             self.total_profiles_label.config(text=f"Tổng profiles: {total_profiles}")
@@ -3317,18 +3559,31 @@ class ModernChromeProfileManager:
                     # Lấy thời gian đăng nhập mới
                     login_time_str = self._get_profile_login_time(profile_name)
                     
-                    # Cập nhật status và action
+                    # Cập nhật status và proxy
                     current_values = list(self.tree.item(item, 'values'))
                     if len(current_values) >= 3:
                         if "Running" in status:
                             current_values[1] = f"Đang chạy | {login_time_str}"
-                            current_values[2] = "Dừng"
                         else:
                             current_values[1] = login_time_str
-                            current_values[2] = "Starting"
-                        self.tree.item(item, values=tuple(current_values))
+                        
+                        # Update proxy
+                        proxy = self.manager.proxy_mgr.get_profile_proxy(profile_name)
+                        if proxy:
+                            proxy_display = proxy if len(proxy) <= 40 else proxy[:37] + "..."
+                        else:
+                            proxy_display = "No proxy"
+                        current_values[2] = proxy_display
+                        
+                        # Apply changes
+                        self.tree.item(item, values=current_values)
                     break
-                    
+        except Exception as e:
+            print(f"Error updating profile status: {e}")
+    
+    def _update_running_profiles_count(self):
+        """Update running profiles count in status"""
+        try:
             # Cập nhật thống kê running profiles
             running_count = 0
             for item in self.tree.get_children():
@@ -3340,7 +3595,7 @@ class ModernChromeProfileManager:
                 self.running_profiles_label.config(text=f"Đang chạy: {running_count}")
                 
         except Exception as e:
-            print(f"⚠️ [UPDATE-STATUS] Lỗi cập nhật trạng thái {profile_name}: {e}")
+            print(f"⚠️ [UPDATE-RUNNING-COUNT] Lỗi cập nhật số lượng profiles đang chạy: {e}")
     
     def clear_login_session(self):
         """Xóa session đăng nhập của profile được chọn"""
@@ -3829,11 +4084,25 @@ Bạn có muốn tiếp tục?"""
         
         ttk.Label(title_frame, text="Create profile", font=("Segoe UI", 16, "bold")).pack(side=tk.LEFT)
         
-        # Tự động tạo tên profile ngẫu nhiên
-        import random, time
-        random_num = random.randint(100000, 999999)
-        timestamp = int(time.time()) % 10000
-        auto_name = f"P-{random_num}-{timestamp:04d}"
+        # Tự động tạo tên profile: X-001, X-002, etc.
+        # Tìm số thứ tự tiếp theo
+        existing_profiles = self.manager.get_all_profiles()
+        x_profiles = [p for p in existing_profiles if p.startswith('X-')]
+        
+        if x_profiles:
+            # Lấy số lớn nhất
+            numbers = []
+            for p in x_profiles:
+                try:
+                    num = int(p.split('-')[1])
+                    numbers.append(num)
+                except:
+                    pass
+            next_num = max(numbers) + 1 if numbers else 1
+        else:
+            next_num = 1
+        
+        auto_name = f"X-{next_num:03d}"
         
         name_var = tk.StringVar(value=auto_name)
         name_entry = ttk.Entry(title_frame, textvariable=name_var, font=("Segoe UI", 12), width=25)
@@ -4781,11 +5050,11 @@ Bạn có muốn tiếp tục?"""
         info_frame = ttk.LabelFrame(main_frame, text="📋 Thông tin cơ bản", padding="10")
         info_frame.pack(fill=tk.X, pady=(0, 10))
         
-        # Profile gốc đã được xóa - sử dụng logic tạo profile mới
+        # Không cần trường tên cơ sở - tạo hàng loạt chỉ dùng số
         
-        # Dòng 1: Số lượng và bắt đầu từ
+        # Dòng 2: Số lượng và bắt đầu từ
         row1_frame = ttk.Frame(info_frame)
-        row1_frame.pack(fill=tk.X, pady=(0, 5))
+        row1_frame.pack(fill=tk.X, pady=(5, 5))
         
         # Số lượng
         ttk.Label(row1_frame, text="Số lượng:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(0, 5))
@@ -4794,72 +5063,73 @@ Bạn có muốn tiếp tục?"""
                                            width=8, font=("Segoe UI", 9))
         bulk_quantity_spinbox.pack(side=tk.LEFT, padx=(0, 20))
         
-        # Bắt đầu từ số
+        # Bắt đầu từ số (tùy chọn)
         ttk.Label(row1_frame, text="Bắt đầu từ:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(0, 5))
-        bulk_start_var = tk.StringVar(value="1")
-        bulk_start_spinbox = ttk.Spinbox(row1_frame, from_=1, to=1000, textvariable=bulk_start_var, 
-                                        width=8, font=("Segoe UI", 9))
-        bulk_start_spinbox.pack(side=tk.LEFT, padx=(0, 20))
+        bulk_start_var = tk.StringVar(value="")  # Để trống = tự động
+        bulk_start_entry = ttk.Entry(row1_frame, textvariable=bulk_start_var, width=8, font=("Segoe UI", 9))
+        bulk_start_entry.pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(row1_frame, text="(Để trống = tự động)", font=("Segoe UI", 8), foreground="gray").pack(side=tk.LEFT)
         
-        # Browser version
-        ttk.Label(row1_frame, text="Chrome Version:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(0, 5))
+        # Dòng 3: Browser version
+        row2_frame = ttk.Frame(info_frame)
+        row2_frame.pack(fill=tk.X, pady=(5, 5))
+        
+        ttk.Label(row2_frame, text="Chrome Version:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(0, 5))
         bulk_version_var = tk.StringVar(value="139.0.7258.139")
-        # GPM Browser versions có sẵn trên hệ thống
         chrome_version_options = [
-            '139.0.7258.139',  # GPM Chromium Core 139
-            '137.0.7151.41',   # GPM Chromium Core 137  
-            '135.0.7049.42',   # GPM Chromium Core 135
-            '134.0.6998.89',   # GPM Chromium Core 134
-            '132.0.6834.84',   # GPM Chromium Core 132
-            '129.0.6668.59',   # GPM Chromium Core 129
-            '127.0.6533.73',   # GPM Chromium Core 127
-            '124.0.6367.29',   # GPM Chromium Core 124
-            '121.0.6167.140',  # GPM Chromium Core 121
-            '119.0.6045.124'   # GPM Chromium Core 119
+            '139.0.7258.139', '137.0.7151.41', '135.0.7049.42', '134.0.6998.89',
+            '132.0.6834.84', '129.0.6668.59', '127.0.6533.73', '124.0.6367.29',
+            '121.0.6167.140', '119.0.6045.124', '115.0.5790.75', '111.0.5563.50',
+            '107.0.5304.8', '106.0.5249.119'
         ]
-        bulk_version_combo = ttk.Combobox(row1_frame, textvariable=bulk_version_var, 
-                                         values=chrome_version_options, state='readonly', width=18)
+        bulk_version_combo = ttk.Combobox(row2_frame, textvariable=bulk_version_var, 
+                                         values=chrome_version_options, state='readonly', width=18, height=15)
         bulk_version_combo.pack(side=tk.LEFT)
         
-        # Dòng 2: Checkboxes
-        row2_frame = ttk.Frame(info_frame)
-        row2_frame.pack(fill=tk.X, pady=(0, 5))
-        
-        # Random format checkbox (bắt buộc)
-        bulk_random_format_var = tk.BooleanVar(value=True)  # Mặc định bật
-        bulk_random_check = ttk.Checkbutton(row2_frame, text="🎲 Random format (P-XXXXXX-XXXX)", 
-                                           variable=bulk_random_format_var, state="disabled")
-        bulk_random_check.pack(side=tk.LEFT, padx=(0, 15))
+        # Dòng 4: Checkboxes
+        row3_frame = ttk.Frame(info_frame)
+        row3_frame.pack(fill=tk.X, pady=(5, 5))
         
         # Random hardware checkbox
         bulk_random_hardware_var = tk.BooleanVar(value=False)
-        bulk_hardware_check = ttk.Checkbutton(row2_frame, text="🔧 Random Hardware", 
+        bulk_hardware_check = ttk.Checkbutton(row3_frame, text="🔧 Random Hardware", 
                                             variable=bulk_random_hardware_var)
         bulk_hardware_check.pack(side=tk.LEFT, padx=(0, 15))
         
         # Random user agent checkbox
         bulk_random_ua_var = tk.BooleanVar(value=False)
-        bulk_ua_check = ttk.Checkbutton(row2_frame, text="🌐 Random User Agent", 
+        bulk_ua_check = ttk.Checkbutton(row3_frame, text="🌐 Random User Agent", 
                                       variable=bulk_random_ua_var)
         bulk_ua_check.pack(side=tk.LEFT)
         
         # Preview tên sẽ tạo
         bulk_preview_label = ttk.Label(info_frame, text="", font=("Segoe UI", 8), foreground="blue")
-        bulk_preview_label.pack(anchor=tk.W, pady=(3, 0))
+        bulk_preview_label.pack(anchor=tk.W, pady=(5, 0))
         
         def update_bulk_preview():
             try:
                 quantity = int(bulk_quantity_var.get())
-                start = int(bulk_start_var.get())
+                start_str = bulk_start_var.get().strip()
                 version = bulk_version_var.get()
                 
-                # Luôn sử dụng random format: P-XXXXXX-XXXX
-                import random
-                prefix_num = random.randint(100000, 999999)
+                # Tìm số bắt đầu
+                if start_str:
+                    start = int(start_str)
+                else:
+                    # Tự động tìm số tiếp theo từ profiles chỉ có số
+                    import re
+                    existing_profiles = self.manager.get_all_profiles()
+                    max_num = 0
+                    for profile in existing_profiles:
+                        # Chỉ tìm profiles có format số thuần (001, 002, ...)
+                        if re.match(r'^\d+$', profile):
+                            max_num = max(max_num, int(profile))
+                    start = max_num + 1
+                
+                # Tạo preview - chỉ có số
                 names = []
                 for i in range(quantity):
-                    suffix_num = f"{start + i:04d}"
-                    names.append(f"P-{prefix_num}-{suffix_num}")
+                    names.append(f"{start + i:03d}")
                 
                 preview_text = f"Tên sẽ tạo: {', '.join(names[:3])}"
                 if len(names) > 3:
@@ -4874,6 +5144,9 @@ Bạn có muốn tiếp tục?"""
         bulk_quantity_var.trace('w', lambda *args: update_bulk_preview())
         bulk_start_var.trace('w', lambda *args: update_bulk_preview())
         bulk_version_var.trace('w', lambda *args: update_bulk_preview())
+        
+        # Update preview lần đầu
+        update_bulk_preview()
         
         # Proxy Configuration cho bulk
         bulk_proxy_frame = ttk.LabelFrame(main_frame, text="🌐 Cấu hình Proxy", padding="10")
@@ -4904,33 +5177,40 @@ Bạn có muốn tiếp tục?"""
         
         def create_bulk_profiles():
             print("📝 [BULK-CREATE] Mở dialog tạo hàng loạt")
-            # Không cần profile gốc - sử dụng logic tạo profile mới
             
             try:
                 quantity = int(bulk_quantity_var.get())
-                start = int(bulk_start_var.get())
-                
                 if quantity <= 0 or quantity > 50:
                     messagebox.showerror("Lỗi", "Số lượng phải từ 1 đến 50!")
                     return
                 
+                # Lấy số bắt đầu (nếu có)
+                start_str = bulk_start_var.get().strip()
+                start = int(start_str) if start_str else None
+                
                 # Lấy proxy list
                 proxy_text = bulk_proxy_text.get('1.0', tk.END).strip()
-                proxy_list = []
-                if proxy_text:
-                    proxy_list = [line.strip() for line in proxy_text.splitlines() if line.strip() and line.strip() != 'null']
+                proxy_list = parse_proxy_list(proxy_text) if proxy_text else []
                 
                 # Lấy thông tin random hardware và user agent
                 use_random_hardware = bulk_random_hardware_var.get()
                 use_random_ua = bulk_random_ua_var.get()
                 
-                # Tạo danh sách tên - luôn sử dụng random format
+                # Tạo danh sách tên - chỉ có số
+                import re
+                if start is None:
+                    # Tự động tìm số tiếp theo từ profiles chỉ có số
+                    existing_profiles = self.manager.get_all_profiles()
+                    max_num = 0
+                    for profile in existing_profiles:
+                        # Chỉ tìm profiles có format số thuần (001, 002, ...)
+                        if re.match(r'^\d+$', profile):
+                            max_num = max(max_num, int(profile))
+                    start = max_num + 1
+                
                 names = []
-                import random
-                prefix_num = random.randint(100000, 999999)
                 for i in range(quantity):
-                    suffix_num = f"{start + i:04d}"
-                    names.append(f"P-{prefix_num}-{suffix_num}")
+                    names.append(f"{start + i:03d}")
                 
                 # Kiểm tra tên đã tồn tại
                 try:
@@ -4941,8 +5221,6 @@ Bạn có muốn tiếp tục?"""
                         return
                 except:
                     pass
-                
-                # Stealth config đã được xóa - không còn sử dụng
                 
                 # Xác nhận tạo hàng loạt
                 version = bulk_version_var.get().strip()
@@ -4960,43 +5238,113 @@ Bạn có muốn tiếp tục?"""
                 
                 # Tạo profiles trong thread
                 def create_bulk_thread():
-                    # Sử dụng hàm create_profiles_bulk mới với thông tin ngẫu nhiên
-                    print(f"🔧 [BULK-CREATE] Tạo {quantity} profile với random hardware: {use_random_hardware}")
+                    print(f"🔧 [BULK-CREATE] Tạo {quantity} profile chỉ có số")
+                    print(f"🔧 [BULK-CREATE] Random hardware: {use_random_hardware}")
                     print(f"🌐 [BULK-CREATE] Random user agent: {use_random_ua}")
                     print(f"🌐 [BULK-CREATE] Sử dụng {len(proxy_list)} proxy")
                     
                     # Lấy version từ dialog
                     version = bulk_version_var.get().strip()
                     
-                    # Gọi hàm tạo profile bulk mới - luôn sử dụng random format
-                    base_name = "P"  # Không quan trọng vì sẽ dùng random format
-                    ok, result = self.manager.create_profiles_bulk(
-                        base_name, quantity, version, True, proxy_list, use_random_hardware, use_random_ua
-                    )
+                    # Tạo từng profile một với tên chỉ có số
+                    success_profiles = []
+                    failed_profiles = []
+                    
+                    for i, profile_name in enumerate(names):
+                        try:
+                            print(f"[BULK-CREATE] Tạo profile {i+1}/{quantity}: {profile_name}")
+                            
+                            # Import hàm tạo profile
+                            from core.tiles.tile_profile_management import clone_chrome_profile
+                            
+                            # Tạo profile
+                            success, message = clone_chrome_profile(self.manager, profile_name)
+                            if not success:
+                                print(f"[ERROR] [BULK-CREATE] Failed to create {profile_name}: {message}")
+                                failed_profiles.append(profile_name)
+                                continue
+                            
+                            # Set Chrome version
+                            import os, json
+                            profile_path = os.path.join(self.manager.profiles_dir, profile_name)
+                            settings_path = os.path.join(profile_path, 'profile_settings.json')
+                            
+                            settings_data = {}
+                            if os.path.exists(settings_path):
+                                try:
+                                    with open(settings_path, 'r', encoding='utf-8') as f:
+                                        settings_data = json.load(f)
+                                except:
+                                    pass
+                            
+                            settings_data['chrome_version'] = version
+                            
+                            # Apply proxy if available
+                            if proxy_list and i < len(proxy_list):
+                                proxy_string = proxy_list[i]
+                                if proxy_string and proxy_string.lower() != 'null':
+                                    self.manager.proxy_mgr.set_profile_proxy(profile_name, proxy_string)
+                                    print(f"[BULK-CREATE] Set proxy for {profile_name}: {proxy_string[:30]}...")
+                            
+                            # Apply random hardware if enabled
+                            if use_random_hardware:
+                                try:
+                                    import random as _rand
+                                    if 'hardware' not in settings_data:
+                                        settings_data['hardware'] = {}
+                                    
+                                    # Random CPU cores (2-16)
+                                    settings_data['hardware']['cpu_cores'] = str(_rand.choice([2, 4, 6, 8, 12, 16]))
+                                    
+                                    # Random RAM (4-32 GB)
+                                    settings_data['hardware']['device_memory'] = str(_rand.choice([4, 8, 16, 32]))
+                                    
+                                    # Random MAC address
+                                    mac = ':'.join([f'{_rand.randint(0, 255):02X}' for _ in range(6)])
+                                    settings_data['hardware']['mac_address'] = mac
+                                    
+                                    print(f"[BULK-CREATE] Applied random hardware for {profile_name}")
+                                except Exception as e:
+                                    print(f"[WARNING] [BULK-CREATE] Could not apply random hardware: {e}")
+                            
+                            # Apply random user agent if enabled
+                            if use_random_ua:
+                                try:
+                                    from core.utils.user_agent import get_random_user_agent
+                                    ua = get_random_user_agent()
+                                    settings_data['user_agent'] = ua
+                                    print(f"[BULK-CREATE] Applied random UA for {profile_name}")
+                                except Exception as e:
+                                    print(f"[WARNING] [BULK-CREATE] Could not apply random UA: {e}")
+                            
+                            # Save settings
+                            with open(settings_path, 'w', encoding='utf-8') as f:
+                                json.dump(settings_data, f, ensure_ascii=False, indent=2)
+                            
+                            success_profiles.append(profile_name)
+                            
+                        except Exception as e:
+                            print(f"[ERROR] [BULK-CREATE] Exception creating {profile_name}: {e}")
+                            failed_profiles.append(profile_name)
+                    
+                    ok = len(success_profiles) > 0
+                    result = success_profiles if ok else failed_profiles
                     
                     if ok:
                         success_count = len(result)
-                    error_count = 0
-                    errors = []
-                    
-                    # Auto-install extension for all new profiles
-                    for name in result:
-                                def install_extension_for_bulk_profile(profile_name):
-                                    try:
-                                        success = self.manager.ensure_extension_installed(profile_name)
-                                        if success:
-                                            print(f"✅ [BULK-CREATE] SwitchyOmega 3 automatically installed for {profile_name}")
-                                        else:
-                                            print(f"⚠️ [BULK-CREATE] Failed to auto-install extension for {profile_name}")
-                                    except Exception as e:
-                                        print(f"❌ [BULK-CREATE] Error auto-installing extension for {profile_name}: {str(e)}")
-                                
-                                # Install extension in background
-                                threading.Thread(target=install_extension_for_bulk_profile, args=(name,), daemon=True).start()
+                        error_count = 0
+                        errors = []
+                        
+                        # ✅ REMOVED: Auto-install SwitchyOmega extension
+                        # Users can manually install extensions if needed
                     else:
                         success_count = 0
                         error_count = quantity
-                        errors = [result]  # result chứa thông báo lỗi
+                        # Đảm bảo errors là list of strings
+                        if isinstance(result, list):
+                            errors = [str(item) for item in result]
+                        else:
+                            errors = [str(result)]
                     
                     # Hiển thị kết quả chi tiết
                     if success_count > 0:
@@ -5062,13 +5410,28 @@ Bạn có muốn tiếp tục?"""
             messagebox.showwarning("Cảnh báo", "Vui lòng chọn một profile!")
             return
         
-        profile_name = self.tree.item(selection[0])["values"][0]
+        # Lấy profile_name từ text thay vì values để tránh TreeView convert số
+        profile_name = self.tree.item(selection[0])["text"]
         print(f"[LAUNCH] [LAUNCH] Starting profile: {profile_name}")
         
         if profile_name in self.drivers:
             print(f"⚠️ [LAUNCH] Profile {profile_name} đang chạy")
-            messagebox.showwarning("Cảnh báo", "Profile đang chạy!")
-            return
+            response = messagebox.askyesnocancel(
+                "Profile đang chạy", 
+                f"Profile '{profile_name}' đang chạy.\n\nBạn muốn:\n- Yes: Đóng và mở lại\n- No: Giữ nguyên\n- Cancel: Hủy"
+            )
+            if response is None:  # Cancel
+                return
+            elif response:  # Yes - Close and reopen
+                print(f"[LAUNCH] Đóng profile {profile_name} để mở lại...")
+                try:
+                    self.stop_profile_by_name(profile_name)
+                except Exception as e:
+                    print(f"[ERROR] Không thể đóng profile: {e}")
+                    messagebox.showerror("Lỗi", f"Không thể đóng profile: {e}")
+                    return
+            else:  # No - Keep running
+                return
         
         # Nếu không chỉ định hidden, sử dụng cài đặt mặc định
         if hidden is None:
@@ -5094,7 +5457,8 @@ Bạn có muốn tiếp tục?"""
                     profile_name,
                     hidden=False,
                     auto_login=False,
-                    login_data=None
+                    login_data=None,
+                    start_url="https://www.tiktok.com"
                 )
             else:
                 # Chế độ ẩn/bulk: bật autofill nếu có login_data
@@ -5102,7 +5466,8 @@ Bạn có muốn tiếp tục?"""
                     profile_name,
                     hidden=True,
                     auto_login=bool(login_data),
-                    login_data=login_data
+                    login_data=login_data,
+                    start_url="https://www.tiktok.com"
                 )
             
             if success:
@@ -5504,12 +5869,11 @@ Bạn có muốn tiếp tục?"""
         url_entry.pack(fill=tk.X, pady=(0, 5))
         
         # URL suggestions
-        account_type_frame = ttk.LabelFrame(main_frame, text="🧾 Loại tài khoản & thời gian xử lý", padding="10")
+        account_type_frame = ttk.LabelFrame(main_frame, text="🧾 Loại tài khoản & thời gian xử lý (Chọn 1 loại)", padding="10")
         account_type_frame.pack(fill=tk.X, pady=(0, 10))
         
-        type1_enabled_var = tk.BooleanVar(value=saved_data.get('type1_enabled', True))
-        type2_enabled_var = tk.BooleanVar(value=saved_data.get('type2_enabled', True))
-        type3_enabled_var = tk.BooleanVar(value=saved_data.get('type3_enabled', True))
+        # ✅ Thay đổi: Dùng IntVar cho radio button (chỉ chọn 1)
+        selected_account_type = tk.IntVar(value=saved_data.get('selected_account_type', 1))
         type1_wait_var = tk.StringVar(value=str(saved_data.get('type1_wait', 60)))
         type2_wait_var = tk.StringVar(value=str(saved_data.get('type2_wait', 75)))
         type3_wait_var = tk.StringVar(value=str(saved_data.get('type3_wait', 90)))
@@ -5518,15 +5882,19 @@ Bạn có muốn tiếp tục?"""
         account_type_frame.columnconfigure(1, weight=0)
         account_type_frame.columnconfigure(2, weight=0)
         
-        ttk.Checkbutton(account_type_frame, text="Loại 1: username|password (giải captcha thủ công)", variable=type1_enabled_var).grid(row=0, column=0, sticky=tk.W)
+        # Radio buttons thay vì checkboxes
+        ttk.Radiobutton(account_type_frame, text="Loại 1: username|password (giải captcha thủ công)", 
+                       variable=selected_account_type, value=1).grid(row=0, column=0, sticky=tk.W)
         ttk.Label(account_type_frame, text="Thời gian chờ (s):").grid(row=0, column=1, sticky=tk.E, padx=(10, 5))
         ttk.Entry(account_type_frame, textvariable=type1_wait_var, width=8).grid(row=0, column=2, sticky=tk.W)
         
-        ttk.Checkbutton(account_type_frame, text="Loại 2: username|password|hotmail|password (tự điền 2FA Hotmail)", variable=type2_enabled_var).grid(row=1, column=0, sticky=tk.W, pady=(5,0))
+        ttk.Radiobutton(account_type_frame, text="Loại 2: username|password|hotmail|password (tự điền 2FA Hotmail)", 
+                       variable=selected_account_type, value=2).grid(row=1, column=0, sticky=tk.W, pady=(5,0))
         ttk.Label(account_type_frame, text="Timeout lấy mã (s):").grid(row=1, column=1, sticky=tk.E, padx=(10, 5), pady=(5,0))
         ttk.Entry(account_type_frame, textvariable=type2_wait_var, width=8).grid(row=1, column=2, sticky=tk.W, pady=(5,0))
         
-        ttk.Checkbutton(account_type_frame, text="Loại 3: username|password|hotmail|password|token|id (Graph token)", variable=type3_enabled_var).grid(row=2, column=0, sticky=tk.W, pady=(5,0))
+        ttk.Radiobutton(account_type_frame, text="Loại 3: username|password|hotmail|password|token|id (Graph token)", 
+                       variable=selected_account_type, value=3).grid(row=2, column=0, sticky=tk.W, pady=(5,0))
         ttk.Label(account_type_frame, text="Timeout lấy mã (s):").grid(row=2, column=1, sticky=tk.E, padx=(10, 5), pady=(5,0))
         ttk.Entry(account_type_frame, textvariable=type3_wait_var, width=8).grid(row=2, column=2, sticky=tk.W, pady=(5,0))
         
@@ -5558,72 +5926,42 @@ Bạn có muốn tiếp tục?"""
                                                command=toggle_omocaptcha_visibility)
         show_omocaptcha_check.pack(anchor=tk.W)
         
-        # Cài extension OMOcaptcha và lưu API key tự động
-        install_omo_and_set_key_var = tk.BooleanVar(value=bool(omocaptcha_api_key_var.get()))
-        ttk.Checkbutton(
-            omocaptcha_frame,
-            text="Cài OMOcaptcha extension và lưu API key vào extension (mỗi profile)",
-            variable=install_omo_and_set_key_var
+        # Options frame
+        options_frame = ttk.Frame(omocaptcha_frame)
+        options_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        # ✅ SIMPLIFIED: Chỉ có 2 options - Không dùng hoặc Dùng API Direct
+        captcha_mode_var = tk.IntVar(value=2 if omocaptcha_api_key_var.get() else 0)
+        
+        # Option 0: No captcha solving
+        ttk.Radiobutton(
+            options_frame,
+            text="⚪ Không dùng OMOcaptcha (giải captcha thủ công)",
+            variable=captcha_mode_var,
+            value=0
+        ).pack(anchor=tk.W)
+        
+        # Option 2: API Direct mode (ONLY option for captcha solving)
+        ttk.Radiobutton(
+            options_frame,
+            text="🚀 Dùng OMOcaptcha API (Python giải captcha tự động) ✅",
+            variable=captcha_mode_var,
+            value=2
         ).pack(anchor=tk.W, pady=(5, 0))
         
-        def test_omocaptcha_install():
-            try:
-                selected_profiles = []
-                if hasattr(self, 'tree') and self.tree.winfo_exists():
-                    selected_profiles = self.tree.selection()
-                if not selected_profiles:
-                    messagebox.showwarning("Thiếu profile", "Vui lòng chọn ít nhất một profile ở bảng bên trái để test.")
-                    return
-                
-                profile_name = self.tree.item(selected_profiles[0])['text']
-                api_key = omocaptcha_api_key_var.get().strip()
-                auto_install = bool(install_omo_and_set_key_var.get())
-                
-                # Sử dụng hàm từ tile_omocaptcha
-                result = test_omocaptcha_setup(
-                    self.manager,
-                    profile_name,
-                    api_key,
-                    auto_install=auto_install
-                )
-                
-                messagebox.showinfo("Kết quả test OMOcaptcha", "\n".join(result['messages']))
-            except Exception as e:
-                messagebox.showerror("Lỗi", f"Không thể test OMOcaptcha: {e}")
+        # Help text
+        help_text = ttk.Label(
+            options_frame,
+            text="💡 API mode: Nhanh, không cần extension, full control",
+            font=("Segoe UI", 8),
+            foreground="gray"
+        )
+        help_text.pack(anchor=tk.W, pady=(2, 0))
         
-        ttk.Button(
-            omocaptcha_frame,
-            text="🧪 Test cài OMOcaptcha + lưu API key",
-            command=test_omocaptcha_install
-        ).pack(anchor=tk.W, pady=(8, 0))
+        # ✅ REMOVED: Extension installation code - chỉ dùng API Direct mode
+        # Không cần button "Cài OMOcaptcha extension" nữa
         
-        # Format selection
-        format_frame = ttk.Frame(main_frame)
-        format_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        ttk.Label(format_frame, text="Format dữ liệu:", font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT, padx=(0, 10))
-        format_var = tk.StringVar(value="TikTok Format")
-        format_combo = ttk.Combobox(format_frame, textvariable=format_var, width=20, state="readonly")
-        format_combo['values'] = ["TikTok Format", "Standard", "Custom"]
-        format_combo.pack(side=tk.LEFT, padx=(0, 15))
-        
-        # Format description
-        format_desc = ttk.Label(format_frame, text="TikTok Format: username|password|email|email_password|ms_refresh_token|ms_client_id|[session_token]|[password]", 
-                               font=("Segoe UI", 9), foreground="gray")
-        format_desc.pack(side=tk.LEFT)
-        
-        def update_format_desc():
-            format_type = format_var.get()
-            if format_type == "Standard":
-                format_desc.config(text="Standard: username|password")
-            elif format_type == "TikTok Format":
-                format_desc.config(text="TikTok: username|password|email|email_password|session_token|password")
-            else:
-                format_desc.config(text="Custom: tự định nghĩa")
-        
-        format_combo.bind('<<ComboboxSelected>>', lambda e: update_format_desc())
-        
-        # Accounts input
+        # Accounts input (Format section removed - always use username|password)
         accounts_frame = ttk.LabelFrame(main_frame, text="👥 Danh sách tài khoản", padding="10")
         accounts_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
@@ -5814,6 +6152,46 @@ testuser|testpass123
         delay_var = tk.StringVar(value=str(saved_data.get('delay', 2)))
         ttk.Entry(settings_grid, textvariable=delay_var, width=10).grid(row=0, column=1, sticky=tk.W, padx=(0, 20))
         
+        # Checkbox: Username có icon cảnh báo
+        username_has_warning_icon_var = tk.BooleanVar(value=saved_data.get('username_has_warning_icon', False))
+        ttk.Checkbutton(
+            settings_grid, 
+            text="⚠️ Username có icon cảnh báo (cần Tab 2 lần để sang password)",
+            variable=username_has_warning_icon_var
+        ).grid(row=1, column=0, columnspan=3, sticky=tk.W, pady=(10, 0))
+        
+        # ✅ NEW: Số lần Tab để đến ô nhập OTP
+        ttk.Label(settings_grid, text="⌨️ Số lần Tab đến ô OTP:").grid(row=4, column=0, sticky=tk.W, padx=(0, 5), pady=(10, 0))
+        otp_tab_count_var = tk.StringVar(value=str(saved_data.get('otp_tab_count', 16)))
+        ttk.Entry(settings_grid, textvariable=otp_tab_count_var, width=10).grid(row=4, column=1, sticky=tk.W, padx=(0, 20), pady=(10, 0))
+        
+        # Tooltip cho OTP tab count
+        otp_tab_help = ttk.Label(settings_grid, 
+                                 text="ℹ️ Số lần nhấn Tab từ đầu trang để focus vào ô nhập mã OTP (mặc định: 16)",
+                                 font=("Segoe UI", 8), foreground="gray")
+        otp_tab_help.grid(row=5, column=0, columnspan=3, sticky=tk.W, pady=(2, 0))
+        
+        # Checkbox: Parallel Mode (chạy đồng thời)
+        parallel_mode_var = tk.BooleanVar(value=saved_data.get('parallel_mode', False))
+        parallel_workers_var = tk.StringVar(value=str(saved_data.get('parallel_workers', 10)))
+        
+        parallel_check = ttk.Checkbutton(
+            settings_grid, 
+            text="🚀 Parallel Mode (chạy đồng thời)",
+            variable=parallel_mode_var
+        )
+        parallel_check.grid(row=2, column=0, sticky=tk.W, pady=(5, 0))
+        
+        ttk.Label(settings_grid, text="Số profiles cùng lúc:").grid(row=2, column=1, sticky=tk.E, padx=(10, 5), pady=(5, 0))
+        parallel_workers_entry = ttk.Entry(settings_grid, textvariable=parallel_workers_var, width=10)
+        parallel_workers_entry.grid(row=2, column=2, sticky=tk.W, pady=(5, 0))
+        
+        # Tooltip cho parallel mode
+        parallel_help = ttk.Label(settings_grid, 
+                                 text="ℹ️ Chạy 10-20 Chrome cùng lúc, mỗi profile dùng phím ảo để tự động điền login",
+                                 font=("Segoe UI", 8), foreground="gray")
+        parallel_help.grid(row=3, column=0, columnspan=3, sticky=tk.W, pady=(2, 0))
+        
         # Auto-launch mode info (native mode is default and integrated)
         mode_info = ttk.Label(settings_grid, text="🛡️ Chế độ: Native (Tự động)", 
                              font=("Segoe UI", 9, "italic"), 
@@ -5854,9 +6232,7 @@ testuser|testpass123
                 'accounts': accounts_text.get("1.0", "end-1c"),
                 'delay': delay_var.get(),
                 'omocaptcha_api_key': omocaptcha_api_key_var.get(),
-                'type1_enabled': type1_enabled_var.get(),
-                'type2_enabled': type2_enabled_var.get(),
-                'type3_enabled': type3_enabled_var.get(),
+                'selected_account_type': selected_account_type.get(),
                 'type1_wait': type1_wait_var.get(),
                 'type2_wait': type2_wait_var.get(),
                 'type3_wait': type3_wait_var.get()
@@ -5870,9 +6246,7 @@ testuser|testpass123
                 accounts_text.delete("1.0", tk.END)
                 delay_var.set("2")
                 omocaptcha_api_key_var.set("")
-                type1_enabled_var.set(True)
-                type2_enabled_var.set(True)
-                type3_enabled_var.set(True)
+                selected_account_type.set(1)
                 type1_wait_var.set("60")
                 type2_wait_var.set("75")
                 type3_wait_var.set("90")
@@ -5896,12 +6270,14 @@ testuser|testpass123
                 'accounts': accounts_text_content,
                 'delay': delay_var.get(),
                 'omocaptcha_api_key': omocaptcha_api_key,
-                'type1_enabled': type1_enabled_var.get(),
-                'type2_enabled': type2_enabled_var.get(),
-                'type3_enabled': type3_enabled_var.get(),
+                'selected_account_type': selected_account_type.get(),
                 'type1_wait': type1_wait_var.get(),
                 'type2_wait': type2_wait_var.get(),
-                'type3_wait': type3_wait_var.get()
+                'type3_wait': type3_wait_var.get(),
+                'username_has_warning_icon': username_has_warning_icon_var.get(),
+                'otp_tab_count': otp_tab_count_var.get(),
+                'parallel_mode': parallel_mode_var.get(),
+                'parallel_workers': parallel_workers_var.get()
             })
             try:
                 print(f"🧾 [BULK-RUN] Raw accounts length: {len(accounts_text_content)}")
@@ -5933,24 +6309,25 @@ testuser|testpass123
                 except Exception:
                     return default
             
+            # ✅ Build type_settings based on selected radio button
+            selected_type = selected_account_type.get()
             type_settings = {
                 'type1': {
-                    'enabled': bool(type1_enabled_var.get()),
+                    'enabled': (selected_type == 1),
                     'wait': _parse_wait(type1_wait_var.get(), 60)
                 },
                 'type2': {
-                    'enabled': bool(type2_enabled_var.get()),
+                    'enabled': (selected_type == 2),
                     'wait': _parse_wait(type2_wait_var.get(), 75)
                 },
                 'type3': {
-                    'enabled': bool(type3_enabled_var.get()),
+                    'enabled': (selected_type == 3),
                     'wait': _parse_wait(type3_wait_var.get(), 90)
                 }
             }
             
-            # Parse accounts based on format
+            # Parse accounts (always use simple username|password format)
             accounts = []
-            format_type = format_var.get()
             
             for line in accounts_text_content.splitlines():
                 line = line.strip()
@@ -5964,8 +6341,8 @@ testuser|testpass123
                     accounts.append(parsed_variant)
                     continue
 
-                fmt = (format_var.get() or "").strip().lower()
-                if fmt == "standard":
+                # Always use simple format (username|password or username:password)
+                if True:  # Always parse as standard format
                     # username|password (or username:password)
                     account_data = parse_standard_format(line)
                     if not account_data and ':' in line:
@@ -6018,6 +6395,16 @@ testuser|testpass123
                         accounts.append(account_data)
             
             print(f"✅ [BULK-RUN] Đã parse {len(accounts)} accounts")
+            
+            # ✅ DEBUG: Log parsed accounts
+            for idx, acc in enumerate(accounts[:3]):  # Log first 3 accounts
+                print(f"🔍 [DEBUG] Account {idx+1}:")
+                print(f"   - variant: {acc.get('variant', 'N/A')}")
+                print(f"   - username: {acc.get('username', 'N/A')}")
+                print(f"   - has raw_line: {bool(acc.get('raw_line'))}")
+                if acc.get('raw_line'):
+                    print(f"   - raw_line preview: {acc['raw_line'][:50]}...")
+            
             # Accounts ready for processing
             
             if not accounts:
@@ -6046,11 +6433,18 @@ testuser|testpass123
                     return
             
             normalized_accounts = []
-            for acc in accounts:
-                acc_copy = dict(acc)
+            for i, acc in enumerate(accounts):
+                # ✅ Deep copy để tránh share references
+                import copy
+                acc_copy = copy.deepcopy(acc)
                 acc_copy.setdefault('variant', 0)
                 acc_copy.setdefault('raw_line', acc_copy.get('raw', ''))
                 acc_copy.setdefault('login_identifier', acc_copy.get('username') or acc_copy.get('email'))
+                
+                # ✅ DEBUG: Log account info
+                username = acc_copy.get('username', acc_copy.get('email', 'N/A'))
+                print(f"📋 [BULK-RUN] Account {i+1}: {username}")
+                
                 variant = acc_copy.get('variant', 0)
                 if variant == 1:
                     acc_copy.setdefault('email', acc_copy.get('login_identifier'))
@@ -6080,24 +6474,96 @@ testuser|testpass123
                 # Trim profiles to number of accounts to avoid empty mappings
                 run_profiles = selected_profiles[:len(accounts)]
             
-            # Start bulk run (always native mode for stealth)
-            print(f"🚀 [BULK-RUN] Starting bulk run with Native Mode (stealth)")
-            print(f"🛡️ [BULK-RUN] No WebDriver - No bot detection")
-            print(f"⌨️ [BULK-RUN] Keyboard-only autofill enabled")
-            if omocaptcha_api_key:
-                print(f"🔑 [BULK-RUN] OMOcaptcha API key provided: {omocaptcha_api_key[:10]}...{omocaptcha_api_key[-5:]}")
-            self._execute_bulk_run(
-                run_profiles,
-                url,
-                accounts,
-                delay,
-                "native",
-                {
-                    'api_key': omocaptcha_api_key,
-                    'auto_install_and_set': bool(install_omo_and_set_key_var.get())
-                },
-                type_settings
-            )
+            # Check parallel mode
+            use_parallel = parallel_mode_var.get()
+            parallel_workers = 10  # Default
+            
+            if use_parallel:
+                try:
+                    parallel_workers = int(parallel_workers_var.get())
+                    if parallel_workers < 1:
+                        parallel_workers = 1
+                    elif parallel_workers > 50:
+                        parallel_workers = 50
+                except:
+                    parallel_workers = 10
+            
+            # Start bulk run
+            if use_parallel:
+                print(f"🚀 [PARALLEL] Starting PARALLEL bulk run")
+                print(f"🚀 [PARALLEL] Max workers: {parallel_workers}")
+                print(f"🛡️ [PARALLEL] Native Mode (stealth)")
+                print(f"⌨️ [PARALLEL] Keyboard-only autofill")
+                
+                # Lưu giá trị username_has_warning_icon và otp_tab_count
+                username_has_warning_icon = username_has_warning_icon_var.get()
+                otp_tab_count = int(otp_tab_count_var.get()) if otp_tab_count_var.get().isdigit() else 16
+                
+                # Get wait seconds from type settings
+                selected_type = selected_account_type.get()
+                wait_seconds = 60  # Default
+                if selected_type == 1:
+                    wait_seconds = _parse_wait(type1_wait_var.get(), 60)
+                elif selected_type == 2:
+                    wait_seconds = _parse_wait(type2_wait_var.get(), 75)
+                elif selected_type == 3:
+                    wait_seconds = _parse_wait(type3_wait_var.get(), 90)
+                
+                # ✅ DEBUG: Log profiles and accounts mapping
+                print(f"📊 [PARALLEL] Profiles count: {len(run_profiles)}")
+                print(f"📊 [PARALLEL] Accounts count: {len(accounts)}")
+                for i in range(min(3, len(run_profiles), len(accounts))):
+                    profile = run_profiles[i]
+                    account = accounts[i]
+                    username = account.get('username', account.get('email', 'N/A'))
+                    print(f"📋 [PARALLEL] {profile} → {username}")
+                if len(run_profiles) > 3:
+                    print(f"📋 [PARALLEL] ... và {len(run_profiles) - 3} profiles khác")
+                
+                # Run parallel
+                self._execute_parallel_bulk_run(
+                    run_profiles,
+                    url,
+                    accounts,
+                    parallel_workers,
+                    {
+                        'api_key': omocaptcha_api_key,
+                        'captcha_mode': captcha_mode_var.get(),  # ✅ 0=None, 1=Extension, 2=API Direct
+                        'auto_install_and_set': (captcha_mode_var.get() == 1),
+                        'use_api_directly': (captcha_mode_var.get() == 2)
+                    },
+                    type_settings,
+                    username_has_warning_icon,
+                    wait_seconds,
+                    otp_tab_count
+                )
+            else:
+                print(f"🚀 [BULK-RUN] Starting SEQUENTIAL bulk run")
+                print(f"🛡️ [BULK-RUN] Native Mode (stealth)")
+                print(f"⌨️ [BULK-RUN] Keyboard-only autofill")
+                if omocaptcha_api_key:
+                    print(f"🔑 [BULK-RUN] OMOcaptcha API key provided: {omocaptcha_api_key[:10]}...{omocaptcha_api_key[-5:]}")
+                
+                # Lưu giá trị username_has_warning_icon và otp_tab_count
+                username_has_warning_icon = username_has_warning_icon_var.get()
+                otp_tab_count = int(otp_tab_count_var.get()) if otp_tab_count_var.get().isdigit() else 16
+                
+                self._execute_bulk_run(
+                    run_profiles,
+                    url,
+                    accounts,
+                    delay,
+                    "native",
+                    {
+                        'api_key': omocaptcha_api_key,
+                        'captcha_mode': captcha_mode_var.get(),  # ✅ 0=None, 1=Extension, 2=API Direct
+                        'auto_install_and_set': (captcha_mode_var.get() == 1),
+                        'use_api_directly': (captcha_mode_var.get() == 2)
+                    },
+                    type_settings,
+                    username_has_warning_icon,
+                    otp_tab_count
+                )
         
         # Buttons với style rõ ràng
         start_btn = ttk.Button(buttons_frame, text="[LAUNCH] Bắt đầu", command=start_bulk_run)
@@ -6114,9 +6580,65 @@ testuser|testpass123
         start_btn.focus()
     
     
-    def _execute_bulk_run(self, profiles, url, accounts, delay, launch_mode="native", omo_config=None, type_settings=None):
-        """Thực thi bulk run"""
+    def _execute_parallel_bulk_run(self, profiles, url, accounts, max_workers, omo_config=None, type_settings=None, username_has_warning_icon=False, wait_seconds=60, otp_tab_count=16):
+        """Thực thi parallel bulk run"""
+        def parallel_bulk_run_thread():
+            try:
+                from parallel_bulk_run import ParallelBulkRunner
+                
+                print(f"🚀 [PARALLEL] Initializing parallel runner...")
+                runner = ParallelBulkRunner(self.manager, max_workers=max_workers)
+                
+                # Run parallel
+                result = runner.run_parallel(
+                    profiles=profiles,
+                    accounts=accounts,
+                    url=url,
+                    omo_config=omo_config,
+                    type_settings=type_settings,
+                    username_has_warning_icon=username_has_warning_icon,
+                    wait_seconds=wait_seconds
+                )
+                
+                # Update UI
+                success_count = result['success_count']
+                failed_count = result['failed_count']
+                
+                self.root.after(0, lambda: self.status_label.config(
+                    text=f"Hoàn thành! {success_count} thành công, {failed_count} thất bại"))
+                self.root.after(0, lambda: self.refresh_profiles())
+                
+                # Show summary
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "Hoàn thành",
+                    f"Parallel Bulk Run hoàn thành!\n\n"
+                    f"✅ Thành công: {success_count}\n"
+                    f"❌ Thất bại: {failed_count}\n"
+                    f"📊 Tổng: {len(profiles)}"
+                ))
+                
+            except ImportError as e:
+                print(f"❌ [PARALLEL] Import error: {e}")
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Lỗi",
+                    "Không thể import ParallelBulkRunner!\n\n"
+                    "Vui lòng đảm bảo file parallel_bulk_run.py tồn tại."
+                ))
+            except Exception as e:
+                print(f"❌ [PARALLEL] Error: {e}")
+                import traceback
+                traceback.print_exc()
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Lỗi",
+                    f"Parallel bulk run thất bại:\n{str(e)}"
+                ))
+        
+        threading.Thread(target=parallel_bulk_run_thread, daemon=True).start()
+    
+    def _execute_bulk_run(self, profiles, url, accounts, delay, launch_mode="native", omo_config=None, type_settings=None, username_has_warning_icon=False, otp_tab_count=16):
+        """Thực thi bulk run (sequential)"""
         def bulk_run_thread():
+            import time  # ✅ Import at function start to avoid UnboundLocalError
             self.status_label.config(text="Đang chạy hàng loạt...")
             success_count = 0
             total_operations = min(len(profiles), len(accounts))  # Mỗi profile 1 account
@@ -6155,12 +6677,25 @@ testuser|testpass123
             # Chuẩn hóa cấu hình OMOcaptcha
             omocaptcha_api_key = None
             auto_install_and_set = False
+            use_api_directly = False  # ✅ NEW
             try:
                 if isinstance(omo_config, dict):
                     omocaptcha_api_key = (omo_config.get('api_key') or '').strip()
                     auto_install_and_set = bool(omo_config.get('auto_install_and_set', False))
+                    use_api_directly = bool(omo_config.get('use_api_directly', False))  # ✅ NEW
             except Exception:
                 pass
+            
+            # ✅ Log captcha mode
+            if omocaptcha_api_key:
+                if use_api_directly:
+                    print(f"🔧 [BULK-RUN] OMOcaptcha mode: API DIRECT (no extension)")
+                elif auto_install_and_set:
+                    print(f"🔧 [BULK-RUN] OMOcaptcha mode: EXTENSION (auto-install)")
+                else:
+                    print(f"🔧 [BULK-RUN] OMOcaptcha mode: EXTENSION (manual)")
+            else:
+                print(f"⚠️ [BULK-RUN] No OMOcaptcha API key - manual captcha solving")
             
             # Mỗi profile chỉ dùng 1 account (theo thứ tự)
             for i, profile_name in enumerate(profiles):
@@ -6190,11 +6725,19 @@ testuser|testpass123
                     login_identifier = account.get('login_identifier', account.get('username', account.get('email', '')))
                     otp_email = account.get('otp_email')
                     
+                    # ✅ DEBUG: Log account data
+                    print(f"🔍 [DEBUG] Account data for {profile_name}:")
+                    print(f"   - variant: {variant}")
+                    print(f"   - username: {account.get('username', 'N/A')}")
+                    print(f"   - email: {account.get('email', 'N/A')}")
+                    print(f"   - raw_line: {account.get('raw_line', 'N/A')[:50] if account.get('raw_line') else 'N/A'}...")
+                    
                     login_data = {
                         'username': login_identifier,
                         'password': account['password'],
                         'email': otp_email or account.get('email', login_identifier),
-                        'twofa': ''  # Không hỗ trợ 2FA cho standard format
+                        'twofa': '',  # Không hỗ trợ 2FA cho standard format
+                        'username_has_warning_icon': username_has_warning_icon  # Sử dụng biến đã lưu
                     }
                     
                     # Add TikTok specific data if available
@@ -6216,37 +6759,25 @@ testuser|testpass123
                     
                     print(f"[LAUNCH] [BULK-RUN] Launch {profile_name} với {login_data['username']} (mode: {launch_mode})")
                     
-                    # Cài OMOcaptcha extension và lưu API key nếu được bật (sử dụng tile_omocaptcha)
-                    if auto_install_and_set and omocaptcha_api_key:
-                        install_success, key_success, messages = setup_omocaptcha_for_bulk_run(
-                            self.manager,
-                            profile_name,
-                            omocaptcha_api_key,
-                            auto_install=True
-                        )
-                        if install_success:
-                            print(f"✅ [BULK-RUN] OMOcaptcha installed for {profile_name}")
+                    # ✅ Setup OMOcaptcha based on mode
+                    if omocaptcha_api_key:
+                        # ✅ DEBUG: Log values
+                        print(f"[DEBUG-CAPTCHA] Profile: {profile_name}")
+                        print(f"[DEBUG-CAPTCHA] use_api_directly: {use_api_directly}")
+                        print(f"[DEBUG-CAPTCHA] auto_install_and_set: {auto_install_and_set}")
+                        
+                        if use_api_directly:
+                            # ✅ API Direct mode - không cài extension
+                            print(f"🚀 [BULK-RUN] Using API Direct mode for {profile_name}")
+                            print(f"   ✅ NO extension installation")
+                            # API key sẽ được dùng trực tiếp trong code
+                            # Store API key for later use
+                            if not hasattr(self, '_omocaptcha_api_keys'):
+                                self._omocaptcha_api_keys = {}
+                            self._omocaptcha_api_keys[profile_name] = omocaptcha_api_key
                         else:
-                            for msg in messages:
-                                if "Cài extension" in msg:
-                                    print(f"⚠️ [BULK-RUN] {msg}")
-                        if key_success:
-                            print(f"🔑 [BULK-RUN] Đã lưu OMOcaptcha API key vào profile {profile_name}")
-                        else:
-                            for msg in messages:
-                                if "Lưu API key" in msg:
-                                    print(f"⚠️ [BULK-RUN] {msg}")
-                    elif omocaptcha_api_key:
-                        # Chỉ lưu API key, không cài extension
-                        key_ok, key_msg = set_omocaptcha_api_key_for_profile(
-                            self.manager,
-                            profile_name,
-                            omocaptcha_api_key
-                        )
-                        if key_ok:
-                            print(f"🔑 [BULK-RUN] Đã lưu OMOcaptcha API key vào profile {profile_name}")
-                        else:
-                            print(f"⚠️ [BULK-RUN] Không thể lưu OMOcaptcha API key: {key_msg}")
+                            # No OMOcaptcha (mode 0)
+                            print(f"⚪ [BULK-RUN] No OMOcaptcha for {profile_name} (manual captcha solving)")
                     
                     # Retry mechanism for Chrome crashes
                     max_retries = 3
@@ -6265,7 +6796,7 @@ testuser|testpass123
                                     auto_login=bool(login_data),  # Enable autofill in native mode
                                     login_data=login_data,
                                     optimized_mode=True,
-                                    ultra_low_memory=True
+                                    ultra_low_memory=False  # ✅ FIXED: Tắt ultra low memory để chrome://version hiển thị đầy đủ
                                 )
                             else:
                                 # WebDriver launch - with autofill
@@ -6276,8 +6807,8 @@ testuser|testpass123
                                     hidden=hidden, 
                                     auto_login=bool(login_data), 
                                     login_data=login_data,
-                                    optimized_mode=True,  # Bật chế độ tối ưu
-                                    ultra_low_memory=True  # Bật chế độ tiết kiệm RAM tối đa
+                                    optimized_mode=True,
+                                    ultra_low_memory=False  # ✅ FIXED: Tắt ultra low memory để chrome://version hiển thị đầy đủ
                                 )
                             
                             if success:
@@ -6295,6 +6826,111 @@ testuser|testpass123
                     if success:
                         print(f"✅ [BULK-RUN] {profile_name} thành công")
                         self.drivers[profile_name] = result
+                        
+                        # ✅ Autofill đã được thực hiện bởi browser_manager (auto_login=True)
+                        # Không cần autofill lại ở đây
+                        print(f"✅ [BULK-RUN] Autofill completed by browser_manager for {profile_name}")
+                        
+                        # ✅ AUTO-SOLVE CAPTCHA AFTER AUTOFILL (V2 - HTML-based)
+                        # ✅ NEW: Check captcha multiple times before giving up
+                        captcha_check_attempts = 5
+                        captcha_found = False
+                        captcha_solved = False
+                        
+                        if use_api_directly and omocaptcha_api_key:
+                            print(f"[CAPTCHA-V2] Checking for captcha after autofill (max {captcha_check_attempts} attempts)...")
+                            
+                            try:
+                                # Initialize captcha solver V2 (HTML-based)
+                                from core.omocaptcha_client import OMOcaptchaClient
+                                from core.tiktok_captcha_solver_v2 import TikTokCaptchaSolverV2
+                                
+                                omocaptcha_client = OMOcaptchaClient(api_key=omocaptcha_api_key)
+                                
+                                # Check if sample collection is enabled
+                                import os
+                                save_samples = os.environ.get('CAPTCHA_SAVE_SAMPLES', '0') == '1'
+                                enable_manual_test = os.environ.get('CAPTCHA_MANUAL_TEST', '0') == '1'
+                                
+                                captcha_solver = TikTokCaptchaSolverV2(
+                                    omocaptcha_client,
+                                    debug_level="INFO",
+                                    artifacts_dir=f"logs/captcha_artifacts_v2/{profile_name}",
+                                    save_samples=save_samples,
+                                    enable_manual_test=enable_manual_test
+                                )
+                                
+                                # Wait a bit for captcha to appear
+                                import asyncio
+                                try:
+                                    loop = asyncio.get_event_loop()
+                                except RuntimeError:
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                
+                                async def check_and_solve_captcha_v2():
+                                    """Check và giải captcha sau autofill (V2)"""
+                                    nonlocal captcha_found  # ✅ Access outer variable
+                                    try:
+                                        # Wait for captcha to appear
+                                        await asyncio.sleep(2)
+                                        
+                                        # Detect captcha
+                                        has_captcha = await captcha_solver.detect_captcha(result)
+                                        
+                                        if has_captcha:
+                                            captcha_found = True  # ✅ Mark captcha as found
+                                            print(f"[CAPTCHA-V2] 🎯 Captcha detected")
+                                            
+                                            # Solve captcha (V2 - HTML-based)
+                                            solution = await captcha_solver.solve_captcha(
+                                                result,
+                                                max_retries=10  # Increased to 10 due to API inconsistency
+                                            )
+                                            
+                                            if solution:
+                                                print(f"[CAPTCHA-V2] ✅ Captcha solved successfully")
+                                                # Wait for page to process
+                                                await asyncio.sleep(3)
+                                                return True
+                                            else:
+                                                print(f"[CAPTCHA-V2] ❌ Failed to solve captcha")
+                                                return False
+                                        else:
+                                            print(f"[CAPTCHA-V2] ✅ No captcha detected")
+                                            return True
+                                    except Exception as e:
+                                        print(f"[CAPTCHA-V2] ❌ Error: {e}")
+                                        import traceback
+                                        traceback.print_exc()
+                                        return False
+                                
+                                # Run captcha check and solve with retry
+                                max_captcha_retries = 2
+                                captcha_solved = False
+                                
+                                for captcha_attempt in range(max_captcha_retries):
+                                    if captcha_attempt > 0:
+                                        print(f"[CAPTCHA-V2] Retry {captcha_attempt}/{max_captcha_retries}...")
+                                        time.sleep(3)
+                                    
+                                    captcha_solved = loop.run_until_complete(check_and_solve_captcha_v2())
+                                    
+                                    if captcha_solved:
+                                        print(f"[CAPTCHA-V2] ✅ Captcha solved on attempt {captcha_attempt + 1}")
+                                        break
+                                    else:
+                                        print(f"[CAPTCHA-V2] ❌ Attempt {captcha_attempt + 1} failed")
+                                
+                                if not captcha_solved:
+                                    print(f"⚠️ [CAPTCHA-V2] Captcha not solved after {max_captcha_retries} attempts")
+                                    print(f"⏭️ [CAPTCHA-V2] Continuing to next step anyway...")
+                                
+                            except Exception as e:
+                                print(f"⚠️ [CAPTCHA-V2] Error initializing captcha solver: {e}")
+                                import traceback
+                                traceback.print_exc()
+                        
                         # Ensure we are on the desired URL (extra safety)
                         try:
                             if url and hasattr(result, 'get'):
@@ -6309,6 +6945,12 @@ testuser|testpass123
                         
                         # LƯU TIKTOK SESSION VÀO PROFILE
                         print(f"💾 [BULK-RUN] Lưu TikTok session cho {profile_name}")
+                        
+                        # ✅ Mặc định đánh dấu là chưa xác định
+                        login_data['login_success'] = None
+                        login_data['account_status'] = 'unknown'
+                        login_data['login_error'] = None
+                        
                         session_success, session_message = self.manager.save_tiktok_session(profile_name, login_data)
                         if session_success:
                             print(f"✅ [BULK-RUN] Đã lưu session: {session_message}")
@@ -6324,51 +6966,435 @@ testuser|testpass123
                         auto_otp_done = False
                         otp_attempted = False
                         
-                        if variant in (2, 3) and type_cfg.get('enabled', True):
-                            raw_line = account.get('raw_line')
-                            if raw_line:
-                                otp_attempted = True
-                                prefer_graph = (variant == 3)
-                                print(f"📫 [BULK-RUN] Thử tự động lấy mã 2FA Hotmail (type {variant}, timeout {wait_seconds}s, graph={prefer_graph})")
-                                try:
-                                    otp_ok, otp_code, otp_info = get_login_otp_from_hotmail(raw_line, prefer_graph=prefer_graph, timeout_sec=max(wait_seconds, 30) or 60)
-                                    if otp_ok and otp_code:
-                                        print(f"✅ [BULK-RUN] Lấy mã 2FA thành công: {otp_code}")
-                                        if result and hasattr(self.manager, '_input_verification_code'):
-                                            try:
-                                                auto_otp_done = self.manager._input_verification_code(result, otp_code)
-                                                if auto_otp_done:
-                                                    print(f"✅ [BULK-RUN] Đã tự động nhập mã 2FA")
-                                                    wait_seconds = max(5, min(wait_seconds, 15))
-                                                    self.root.after(0, lambda p=profile_name: self._update_profile_status(p, "🟢 2FA Auto"))
-                                            except Exception as otp_err:
-                                                print(f"⚠️ [BULK-RUN] Không thể tự nhập mã 2FA: {otp_err}")
-                                    else:
-                                        print(f"⚠️ [BULK-RUN] Không lấy được mã 2FA tự động (type {variant})")
-                                except Exception as otp_exception:
-                                    print(f"⚠️ [BULK-RUN] Lỗi khi tự động lấy mã 2FA: {otp_exception}")
+                        # ✅ FIX: Chỉ thử lấy OTP nếu có captcha hoặc captcha không rõ
+                        # Nếu KHÔNG có captcha sau autofill → Bỏ qua OTP (login thành công rồi)
+                        should_try_otp = True
                         
-                        if variant == 1 and not type_cfg.get('enabled', True):
+                        # Check if captcha was detected
+                        if captcha_solved and not captcha_found:
+                            # No captcha detected after autofill → Login likely successful
+                            print(f"✅ [BULK-RUN] Không có captcha sau autofill → Bỏ qua OTP")
+                            should_try_otp = False
+                            wait_seconds = 5  # Chỉ chờ 5s để kiểm tra login status
+                        
+                        raw_line = account.get('raw_line')
+                        
+                        if should_try_otp and raw_line:
+                            print(f"🔍 [DEBUG-OTP] Checking for OTP...")
+                            print(f"   - raw_line exists: {bool(raw_line)}")
+                            print(f"   - raw_line value: {raw_line[:50] if raw_line else 'None'}...")
+                            
+                            otp_attempted = True
+                            prefer_graph = (variant == 3)
+                            
+                            # Xác định code_type dựa trên platform hoặc mặc định là tiktok
+                            code_type = "tiktok"  # Mặc định
+                            
+                            # ✅ Log variant để debug
+                            print(f"🔍 [BULK-RUN] Account variant: {variant}")
+                            print(f"🔍 [BULK-RUN] Raw line: {raw_line[:50]}...")
+                            
+                            if variant == 1:
+                                # Variant 1: email|password - sử dụng UnlimitMail API
+                                print(f"📫 [BULK-RUN] Thử tự động lấy mã OTP qua UnlimitMail API (type {variant}, timeout {wait_seconds}s, code_type={code_type})")
+                            elif variant == 2:
+                                # Variant 2: username|password|email|email_password - sử dụng UnlimitMail API
+                                print(f"📫 [BULK-RUN] Thử tự động lấy mã OTP qua UnlimitMail API (type {variant}, timeout {wait_seconds}s, code_type={code_type})")
+                            elif variant == 3:
+                                # Variant 3: Hotmail Graph API
+                                print(f"📫 [BULK-RUN] Thử tự động lấy mã 2FA Hotmail Graph API (type {variant}, timeout {wait_seconds}s, graph={prefer_graph})")
+                            else:
+                                # Variant 0 hoặc unknown - vẫn thử lấy OTP
+                                print(f"📫 [BULK-RUN] Thử tự động lấy mã OTP (variant {variant}, timeout {wait_seconds}s)")
+                            
+                            # ✅ Detect captcha on page
+                            has_captcha = None  # Unknown by default
+                            if result:  # result is the page object
+                                try:
+                                    import asyncio
+                                    try:
+                                        loop = asyncio.get_event_loop()
+                                    except RuntimeError:
+                                        loop = asyncio.new_event_loop()
+                                        asyncio.set_event_loop(loop)
+                                    
+                                    # Check for captcha elements
+                                    async def check_captcha():
+                                        try:
+                                            # Common captcha selectors
+                                            captcha_selectors = [
+                                                'iframe[src*="captcha"]',
+                                                'iframe[title*="captcha"]',
+                                                'div[class*="captcha"]',
+                                                'div[id*="captcha"]',
+                                                '#captcha',
+                                                '.captcha',
+                                                '[data-testid*="captcha"]',
+                                                'iframe[src*="recaptcha"]',
+                                                'iframe[src*="hcaptcha"]',
+                                            ]
+                                            
+                                            for selector in captcha_selectors:
+                                                element = await result.query_selector(selector)
+                                                if element:
+                                                    return True
+                                            return False
+                                        except:
+                                            return None  # Unknown
+                                    
+                                    has_captcha = loop.run_until_complete(check_captcha())
+                                    
+                                    if has_captcha:
+                                        print(f"🔍 [BULK-RUN] Captcha detected on page")
+                                    elif has_captcha is False:
+                                        print(f"🔍 [BULK-RUN] No captcha detected")
+                                    else:
+                                        print(f"🔍 [BULK-RUN] Captcha status unknown")
+                                except Exception as e:
+                                    print(f"⚠️ [BULK-RUN] Could not detect captcha: {e}")
+                                    has_captcha = None
+                            
+                            try:
+                                # ✅ Try with has_captcha parameter (new version)
+                                try:
+                                    otp_ok, otp_code, otp_info = get_login_otp_from_hotmail(
+                                        raw_line, 
+                                        prefer_graph=prefer_graph, 
+                                        timeout_sec=max(wait_seconds, 30) or 60,
+                                        code_type=code_type,
+                                        has_captcha=has_captcha  # ✅ Pass captcha detection result
+                                    )
+                                except TypeError as te:
+                                    # ⚠️ Fallback: Old version without has_captcha parameter
+                                    if 'has_captcha' in str(te):
+                                        print(f"⚠️ [BULK-RUN] Using old version of get_login_otp_from_hotmail (no has_captcha parameter)")
+                                        print(f"⚠️ [BULK-RUN] Please restart app to use new version: restart_app.bat")
+                                        otp_ok, otp_code, otp_info = get_login_otp_from_hotmail(
+                                            raw_line, 
+                                            prefer_graph=prefer_graph, 
+                                            timeout_sec=max(wait_seconds, 30) or 60,
+                                            code_type=code_type
+                                        )
+                                    else:
+                                        raise  # Re-raise if it's a different TypeError
+                                if otp_ok and otp_code:
+                                    source = otp_info.get('source', 'unknown')
+                                    print(f"✅ [BULK-RUN] Lấy mã OTP thành công từ {source}: {otp_code}")
+                                    if result and hasattr(self.manager, '_input_verification_code'):
+                                        try:
+                                            # Call async function properly
+                                            import asyncio
+                                            try:
+                                                loop = asyncio.get_event_loop()
+                                            except RuntimeError:
+                                                loop = asyncio.new_event_loop()
+                                                asyncio.set_event_loop(loop)
+                                            
+                                            # ✅ CRITICAL: Truyền username_has_warning_icon và otp_tab_count
+                                            print(f"[DEBUG] username_has_warning_icon = {username_has_warning_icon}")
+                                            print(f"[DEBUG] otp_tab_count = {otp_tab_count}")
+                                            auto_otp_done = loop.run_until_complete(
+                                                self.manager._input_verification_code(
+                                                    result, 
+                                                    otp_code,
+                                                    username_has_warning_icon=username_has_warning_icon,
+                                                    otp_tab_count=otp_tab_count
+                                                )
+                                            )
+                                            
+                                            if auto_otp_done:
+                                                print(f"✅ [BULK-RUN] Đã tự động nhập mã OTP")
+                                                # ✅ FIX: Sau khi điền OTP, chờ 30s để TikTok xử lý
+                                                wait_seconds = 30  # Giảm từ 90s xuống 30s
+                                                print(f"⏳ [BULK-RUN] Chờ {wait_seconds}s để TikTok xử lý OTP...")
+                                                self.root.after(0, lambda p=profile_name: self._update_profile_status(p, "🟢 OTP Auto"))
+                                        except Exception as otp_err:
+                                            print(f"⚠️ [BULK-RUN] Không thể tự nhập mã OTP: {otp_err}")
+                                            import traceback
+                                            traceback.print_exc()
+                                else:
+                                    print(f"⚠️ [BULK-RUN] Không lấy được mã OTP tự động (variant {variant})")
+                            except Exception as otp_exception:
+                                print(f"⚠️ [BULK-RUN] Lỗi khi tự động lấy mã OTP: {otp_exception}")
+                                import traceback
+                                traceback.print_exc()
+                        
+                        # ✅ FIX: Nếu đã điền OTP thành công, BẮT BUỘC phải chờ (không skip)
+                        if not auto_otp_done and not type_cfg.get('enabled', True):
                             wait_seconds = 0
+                        
+                        # ✅ FIX: Nếu đã điền OTP, đảm bảo chờ ít nhất 10s
+                        if auto_otp_done and wait_seconds < 10:
+                            wait_seconds = 10
+                            print(f"⏳ [BULK-RUN] Force wait {wait_seconds}s after OTP input")
                         
                         if wait_seconds > 0:
                             status_label_text = f"Chờ xử lý sau đăng nhập cho {profile_name}... ({wait_seconds}s)"
-                            if otp_attempted and not auto_otp_done and variant in (2, 3):
-                                status_label_text = f"Đợi mã 2FA Hotmail cho {profile_name}... ({wait_seconds}s)"
+                            if otp_attempted and not auto_otp_done:
+                                status_label_text = f"Đợi mã OTP cho {profile_name}... ({wait_seconds}s)"
                             self.root.after(0, lambda text=status_label_text: self.status_label.config(text=text))
-                            wait_status = "⏰ Waiting 2FA" if variant in (2, 3) else "⏳ Waiting"
+                            wait_status = "⏰ Waiting OTP" if otp_attempted and not auto_otp_done else "⏳ Waiting"
                             self.root.after(0, lambda p=profile_name, s=wait_status: self._update_profile_status(p, s))
                             
                             for countdown in range(wait_seconds, 0, -1):
                                 time.sleep(1)
                                 self.root.after(0, lambda c=countdown, prof=profile_name, attempt=otp_attempted and not auto_otp_done: self.status_label.config(
-                                    text=(f"Đợi mã 2FA Hotmail cho {prof}... ({c}s)" if attempt else f"Chờ xử lý sau đăng nhập cho {prof}... ({c}s)")
+                                    text=(f"Đợi mã OTP cho {prof}... ({c}s)" if attempt else f"Chờ xử lý sau đăng nhập cho {prof}... ({c}s)")
                                 ))
                         else:
                             print(f"⏭️ [BULK-RUN] Bỏ qua thời gian chờ bổ sung cho {profile_name}")
                         
+                        # ✅ KIỂM TRA LOGIN SUCCESS SAU KHI CHỜ GIẢI CAPTCHA
+                        print(f"🔍 [BULK-RUN] Kiểm tra trạng thái login cho {profile_name}...")
+                        login_success_detected = False
+                        login_error_msg = None
+                        
+                        try:
+                            if result and hasattr(result, 'url'):
+                                import asyncio
+                                try:
+                                    loop = asyncio.get_event_loop()
+                                except RuntimeError:
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                
+                                async def check_login_success():
+                                    """Kiểm tra xem có chuyển sang foryou không - Retry nhiều lần"""
+                                    try:
+                                        # ✅ FIX: Retry 3 lần với delay 3s giữa mỗi lần
+                                        # Vì TikTok có thể mất thời gian xử lý OTP
+                                        max_retries = 3
+                                        for attempt in range(max_retries):
+                                            if attempt > 0:
+                                                print(f"🔄 [BULK-RUN] Retry {attempt}/{max_retries-1} - Chờ 3s...")
+                                                await asyncio.sleep(3)
+                                            
+                                            # Lấy URL hiện tại
+                                            current_url = result.url
+                                            print(f"🌐 [BULK-RUN] URL hiện tại (attempt {attempt+1}): {current_url}")
+                                            
+                                            # Kiểm tra xem có chuyển sang foryou không
+                                            if '/foryou' in current_url or '/for-you' in current_url or 'tiktok.com/@' in current_url:
+                                                print(f"✅ [BULK-RUN] Login thành công! Đã chuyển sang: {current_url}")
+                                                return True, None
+                                            
+                                            # Kiểm tra xem có còn ở trang login không
+                                            if '/login' in current_url:
+                                                # Nếu vẫn ở login page, retry thêm
+                                                if attempt < max_retries - 1:
+                                                    print(f"⏳ [BULK-RUN] Vẫn ở trang login, retry...")
+                                                    continue
+                                                else:
+                                                    print(f"❌ [BULK-RUN] Login thất bại! Vẫn ở trang login sau {max_retries} lần thử: {current_url}")
+                                                    return False, "Still on login page"
+                                            else:
+                                                # URL khác, có thể đang xử lý hoặc error
+                                                if attempt < max_retries - 1:
+                                                    print(f"⏳ [BULK-RUN] URL chưa rõ, retry...")
+                                                    continue
+                                                else:
+                                                    print(f"⚠️ [BULK-RUN] URL không xác định sau {max_retries} lần thử: {current_url}")
+                                                    return False, f"Unknown page: {current_url}"
+                                        
+                                        return False, "Max retries reached"
+                                    except Exception as e:
+                                        print(f"⚠️ [BULK-RUN] Lỗi khi kiểm tra URL: {e}")
+                                        return False, str(e)
+                                
+                                login_success_detected, login_error_msg = loop.run_until_complete(check_login_success())
+                        except Exception as e:
+                            print(f"⚠️ [BULK-RUN] Không thể kiểm tra login status: {e}")
+                            login_error_msg = str(e)
+                        
+                        # ✅ CẬP NHẬT TRẠNG THÁI LOGIN VÀO SESSION
+                        if login_success_detected:
+                            login_data['login_success'] = True
+                            login_data['account_status'] = 'live'
+                            login_data['login_error'] = None
+                            print(f"✅ [BULK-RUN] Account {profile_name} login thành công → LIVE")
+                            self.root.after(0, lambda p=profile_name: self._update_profile_status(p, "🟢 Live"))
+                        else:
+                            # ✅ FIX: Nếu vẫn ở trang login, thử lấy và nhập OTP
+                            if login_error_msg == "Still on login page" and raw_line and not auto_otp_done:
+                                print(f"⏭️ [BULK-RUN] Vẫn ở trang login, thử lấy và nhập OTP...")
+                                print(f"⏳ [BULK-RUN] Chờ 10s trước khi lấy OTP...")
+                                time.sleep(10)
+                                
+                                # Thử lấy OTP
+                                try:
+                                    prefer_graph = (variant == 3)
+                                    code_type = "tiktok"
+                                    
+                                    print(f"📫 [BULK-RUN] Thử lấy mã OTP (variant {variant})...")
+                                    
+                                    # Detect captcha on page
+                                    has_captcha_for_otp = None
+                                    if result:
+                                        import asyncio
+                                        try:
+                                            loop = asyncio.get_event_loop()
+                                        except RuntimeError:
+                                            loop = asyncio.new_event_loop()
+                                            asyncio.set_event_loop(loop)
+                                        
+                                        async def check_captcha_for_otp():
+                                            try:
+                                                # Simple check for captcha elements
+                                                captcha_selectors = [
+                                                    'iframe[id*="captcha"]',
+                                                    'div[id*="captcha"]',
+                                                    'div[class*="captcha"]'
+                                                ]
+                                                for selector in captcha_selectors:
+                                                    elements = await result.query_selector_all(selector)
+                                                    if elements:
+                                                        return True
+                                                return False
+                                            except:
+                                                return None
+                                        
+                                        has_captcha_for_otp = loop.run_until_complete(check_captcha_for_otp())
+                                        if has_captcha_for_otp:
+                                            print(f"🔍 [BULK-RUN] Captcha detected on page")
+                                        else:
+                                            print(f"🔍 [BULK-RUN] No captcha detected")
+                                    
+                                    # Fetch OTP
+                                    try:
+                                        otp_ok, otp_code, otp_info = get_login_otp_from_hotmail(
+                                            raw_line,
+                                            prefer_graph=prefer_graph,
+                                            timeout_sec=max(wait_seconds, 30) or 60,
+                                            code_type=code_type,
+                                            has_captcha=has_captcha_for_otp
+                                        )
+                                    except TypeError as te:
+                                        if 'has_captcha' in str(te):
+                                            print(f"⚠️ [BULK-RUN] Using old version of get_login_otp_from_hotmail")
+                                            otp_ok, otp_code, otp_info = get_login_otp_from_hotmail(
+                                                raw_line,
+                                                prefer_graph=prefer_graph,
+                                                timeout_sec=max(wait_seconds, 30) or 60,
+                                                code_type=code_type
+                                            )
+                                        else:
+                                            raise
+                                    
+                                    if otp_ok and otp_code:
+                                        source = otp_info.get('source', 'unknown')
+                                        print(f"✅ [BULK-RUN] Lấy mã OTP thành công từ {source}: {otp_code}")
+                                        
+                                        # Nhập OTP
+                                        if result and hasattr(self.manager, '_input_verification_code'):
+                                            try:
+                                                import asyncio
+                                                try:
+                                                    loop = asyncio.get_event_loop()
+                                                except RuntimeError:
+                                                    loop = asyncio.new_event_loop()
+                                                    asyncio.set_event_loop(loop)
+                                                
+                                                success = loop.run_until_complete(
+                                                    self.manager._input_verification_code(
+                                                        result,
+                                                        otp_code,
+                                                        username_has_warning_icon=username_has_warning_icon,
+                                                        otp_tab_count=otp_tab_count
+                                                    )
+                                                )
+                                                
+                                                if success:
+                                                    print(f"✅ [BULK-RUN] Đã tự động nhập mã OTP")
+                                                    auto_otp_done = True
+                                                    
+                                                    # Chờ thêm 10s để TikTok xử lý
+                                                    print(f"⏳ [BULK-RUN] Chờ 10s để TikTok xử lý OTP...")
+                                                    time.sleep(10)
+                                                    
+                                                    # Check login status again
+                                                    print(f"🔍 [BULK-RUN] Kiểm tra lại trạng thái login...")
+                                                    if result and hasattr(result, 'url'):
+                                                        current_url = result.url
+                                                        print(f"🌐 [BULK-RUN] URL hiện tại: {current_url}")
+                                                        
+                                                        if '/foryou' in current_url or '/for-you' in current_url or 'tiktok.com/@' in current_url:
+                                                            print(f"✅ [BULK-RUN] Login thành công sau OTP!")
+                                                            login_data['login_success'] = True
+                                                            login_data['account_status'] = 'live'
+                                                            login_data['login_error'] = None
+                                                            self.root.after(0, lambda p=profile_name: self._update_profile_status(p, "🟢 Live"))
+                                                        else:
+                                                            print(f"⚠️ [BULK-RUN] Vẫn chưa chuyển sang foryou")
+                                                            login_data['login_success'] = None
+                                                            login_data['login_error'] = None
+                                                else:
+                                                    print(f"⚠️ [BULK-RUN] Không thể nhập mã OTP")
+                                            except Exception as input_err:
+                                                print(f"⚠️ [BULK-RUN] Lỗi khi nhập OTP: {input_err}")
+                                    else:
+                                        print(f"⚠️ [BULK-RUN] Không lấy được mã OTP")
+                                        
+                                except Exception as otp_err:
+                                    print(f"⚠️ [BULK-RUN] Lỗi khi xử lý OTP: {otp_err}")
+                                    import traceback
+                                    traceback.print_exc()
+                                
+                                # Không set account_status nếu đã xử lý OTP
+                                if not auto_otp_done:
+                                    login_data['login_success'] = None
+                                    login_data['login_error'] = None
+                            else:
+                                # Các lỗi khác → đánh dấu UNKNOWN
+                                login_data['login_success'] = False
+                                login_data['account_status'] = 'unknown'
+                                login_data['login_error'] = login_error_msg or "Login status unclear"
+                                print(f"⚠️ [BULK-RUN] Account {profile_name} login chưa rõ → UNKNOWN")
+                                print(f"💡 [BULK-RUN] Có thể cần xử lý captcha hoặc OTP thủ công")
+                                self.root.after(0, lambda p=profile_name: self._update_profile_status(p, "🟡 Unknown"))
+                        
+                        # Lưu lại session với trạng thái mới
+                        session_success, session_message = self.manager.save_tiktok_session(profile_name, login_data)
+                        if session_success:
+                            print(f"💾 [BULK-RUN] Đã cập nhật trạng thái login: {session_message}")
+                        else:
+                            print(f"⚠️ [BULK-RUN] Lỗi cập nhật trạng thái: {session_message}")
+                        
+                        # ✅ Đóng profile sau khi xử lý xong
+                        try:
+                            if profile_name in self.drivers:
+                                print(f"🔒 [BULK-RUN] Đóng profile {profile_name}...")
+                                page = self.drivers[profile_name]
+                                # Playwright Page object - dùng close() và context.close()
+                                try:
+                                    async def close_page():
+                                        await page.close()
+                                        await page.context.close()
+                                    
+                                    loop.run_until_complete(close_page())
+                                except:
+                                    pass
+                                del self.drivers[profile_name]
+                                print(f"✅ [BULK-RUN] Đã đóng profile {profile_name}")
+                                time.sleep(1)  # Đợi Chrome đóng hoàn toàn
+                        except Exception as e:
+                            print(f"⚠️ [BULK-RUN] Lỗi khi đóng profile {profile_name}: {e}")
+                        
                     else:
                         print(f"❌ [BULK-RUN] {profile_name} thất bại sau {max_retries} lần thử")
+                        
+                        # ✅ Mark login as failed - Chrome không launch được
+                        if login_data:
+                            login_data['login_success'] = False
+                            login_data['account_status'] = 'die'
+                            login_data['login_error'] = f'Chrome launch failed after {max_retries} retries'
+                            
+                            # Save failed status
+                            try:
+                                self.manager.save_tiktok_session(profile_name, login_data)
+                                print(f"💾 [BULK-RUN] Đã lưu trạng thái failed cho {profile_name}")
+                            except Exception as e:
+                                print(f"⚠️ [BULK-RUN] Không thể lưu trạng thái failed: {e}")
+                        
                         # Cập nhật trạng thái profile thất bại
                         self.root.after(0, lambda p=profile_name: self._update_profile_status(p, "❌ Failed"))
                 else:
@@ -6429,13 +7455,21 @@ testuser|testpass123
         sessions_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
         # Treeview for sessions
-        columns = ("Profile", "Email", "Username", "Password", "Saved At")
+        columns = ("Profile", "Email", "Username", "Status", "Login", "Saved At")
         sessions_tree = ttk.Treeview(sessions_frame, columns=columns, show="headings", height=12)
         
         # Configure columns
+        column_widths = {
+            "Profile": 120,
+            "Email": 150,
+            "Username": 120,
+            "Status": 80,
+            "Login": 100,
+            "Saved At": 150
+        }
         for col in columns:
             sessions_tree.heading(col, text=col)
-            sessions_tree.column(col, width=150)
+            sessions_tree.column(col, width=column_widths.get(col, 100))
         
         # Scrollbar
         scrollbar = ttk.Scrollbar(sessions_frame, orient=tk.VERTICAL, command=sessions_tree.yview)
@@ -6451,20 +7485,49 @@ testuser|testpass123
             success, sessions = self.manager.get_all_tiktok_sessions()
             if success:
                 for profile_name, session_data in sessions.items():
-                    saved_at = session_data.get('saved_at', 'N/A')
-                    if saved_at != 'N/A':
+                    # Try multiple fields for timestamp
+                    saved_at = session_data.get('saved_at') or session_data.get('updated_at') or session_data.get('last_login_attempt')
+                    
+                    if saved_at:
                         try:
-                            from datetime import datetime
+                            # Try to parse ISO format
                             dt = datetime.fromisoformat(saved_at)
                             saved_at = dt.strftime("%Y-%m-%d %H:%M:%S")
                         except:
-                            pass
+                            # If parse fails, try to use as-is
+                            try:
+                                # Maybe it's already formatted
+                                saved_at = str(saved_at)[:19]  # Truncate to datetime length
+                            except:
+                                saved_at = 'N/A'
+                    else:
+                        saved_at = 'N/A'
+                    
+                    # Get status and login info
+                    account_status = session_data.get('account_status', 'unknown')
+                    login_success = session_data.get('login_success')
+                    
+                    # Format status with emoji
+                    status_display = {
+                        'live': '🟢 Live',
+                        'die': '🔴 Die',
+                        'unknown': '⚪ Unknown'
+                    }.get(account_status, '⚪ Unknown')
+                    
+                    # Format login status
+                    if login_success is True:
+                        login_display = '✅ Success'
+                    elif login_success is False:
+                        login_display = '❌ Failed'
+                    else:
+                        login_display = '⚪ N/A'
                     
                     sessions_tree.insert("", tk.END, values=(
-                        profile_name,
+                        str(profile_name),  # Convert to string to avoid int issues
                         session_data.get('email', 'N/A'),
                         session_data.get('username', 'N/A'),
-                        session_data.get('password', 'N/A'),
+                        status_display,
+                        login_display,
                         saved_at
                     ))
                 
@@ -6481,6 +7544,611 @@ testuser|testpass123
         
         def refresh_sessions():
             load_sessions()
+        
+        def check_feature_blocks():
+            """Check feature blocks qua TikTok API trực tiếp"""
+            # ✅ Get selected profiles from sessions_tree
+            selected_profiles = []
+            try:
+                selection = sessions_tree.selection()
+                if selection:
+                    selected_profiles = [sessions_tree.item(item)['values'][0] for item in selection]
+            except Exception as e:
+                print(f"[CHECK-FEATURES] Error getting selection: {e}")
+            
+            if not selected_profiles:
+                messagebox.showwarning("Cảnh báo", "Vui lòng chọn ít nhất một profile để check features!")
+                return
+            
+            if not messagebox.askyesno("Xác nhận", 
+                f"Check feature blocks cho {len(selected_profiles)} profile(s) qua TikTok API?\n\n"
+                f"Sẽ kiểm tra:\n"
+                f"✅ Comment block\n"
+                f"✅ Like block\n"
+                f"✅ Follow block\n"
+                f"✅ DM block\n"
+                f"✅ Upload block\n"
+                f"✅ Live block\n\n"
+                f"Quá trình này có thể mất vài phút..."):
+                return
+            
+            # Progress dialog
+            progress_dialog = tk.Toplevel(dialog)
+            progress_dialog.title("Đang check features...")
+            progress_dialog.geometry("500x200")
+            progress_dialog.transient(dialog)
+            progress_dialog.grab_set()
+            
+            progress_frame = ttk.Frame(progress_dialog, padding="20")
+            progress_frame.pack(fill=tk.BOTH, expand=True)
+            
+            status_label = ttk.Label(progress_frame, text="Đang khởi động...", font=("Segoe UI", 10))
+            status_label.pack(pady=(0, 10))
+            
+            progress_bar = ttk.Progressbar(progress_frame, mode='determinate', length=400)
+            progress_bar.pack(pady=(0, 10))
+            
+            result_label = ttk.Label(progress_frame, text="", font=("Segoe UI", 9))
+            result_label.pack()
+            
+            def check_features_thread():
+                try:
+                    # Use UI-based checker (more reliable than API)
+                    from core.tiktok.block_checker_ui import TikTokBlockCheckerUI
+                    import asyncio
+                    
+                    # Create checker
+                    checker = TikTokBlockCheckerUI(storage_dir='tiktok', debug=False)
+                    
+                    results = []
+                    total = len(selected_profiles)
+                    
+                    for idx, profile_name in enumerate(selected_profiles, 1):
+                        try:
+                            # Update UI
+                            progress_dialog.after(0, lambda p=profile_name: status_label.config(
+                                text=f"Checking {p}... ({idx}/{total})"
+                            ))
+                            progress_dialog.after(0, lambda v=(idx/total)*100: progress_bar.config(value=v))
+                            
+                            # Launch profile
+                            success, page = self.manager.launch_chrome_profile(
+                                profile_name,
+                                hidden=False,
+                                start_url="https://www.tiktok.com"
+                            )
+                            
+                            if success and page:
+                                # ✅ Check features qua API
+                                # Use the same event loop as the browser manager
+                                try:
+                                    # Get the event loop from the manager
+                                    loop = self.manager._loop
+                                    if loop and not loop.is_closed():
+                                        block_result = loop.run_until_complete(
+                                            checker.check_block_status(page, profile_name)
+                                        )
+                                    else:
+                                        # Fallback to current loop
+                                        loop = asyncio.get_event_loop()
+                                        block_result = loop.run_until_complete(
+                                            checker.check_block_status(page, profile_name)
+                                        )
+                                except Exception as e:
+                                    print(f"[BLOCK-CHECK] Error checking {profile_name}: {e}")
+                                    import traceback
+                                    traceback.print_exc()
+                                    block_result = {
+                                        'login_error': True,
+                                        'error': str(e)
+                                    }
+                                
+                                # Save to session
+                                success_save, session_data = self.manager.load_tiktok_session(profile_name)
+                                if success_save and session_data:
+                                    session_data['block_status'] = block_result
+                                    session_data['last_block_check'] = datetime.now().isoformat()
+                                    self.manager.save_tiktok_session(profile_name, session_data)
+                                
+                                results.append({
+                                    'profile': profile_name,
+                                    'result': block_result
+                                })
+                                
+                                # Close browser
+                                try:
+                                    self.manager.close_profile(profile_name)
+                                except:
+                                    pass
+                            else:
+                                results.append({
+                                    'profile': profile_name,
+                                    'result': {'login_error': True}
+                                })
+                            
+                            # Update result
+                            blocked_count = sum(1 for r in results 
+                                if any(v for k, v in r['result'].items() if k.endswith('_blocked') and v))
+                            progress_dialog.after(0, lambda: result_label.config(
+                                text=f"✅ Checked: {len(results)} | ⚠️ Blocked: {blocked_count}"
+                            ))
+                            
+                        except Exception as e:
+                            print(f"[CHECK-FEATURES] Error checking {profile_name}: {e}")
+                            results.append({
+                                'profile': profile_name,
+                                'result': {'login_error': True}
+                            })
+                    
+                    # Show summary
+                    summary = "📊 Feature Check Results (via TikTok API):\n\n"
+                    for r in results:
+                        summary += f"Profile: {r['profile']}\n"
+                        result = r['result']
+                        
+                        if result.get('login_error'):
+                            summary += f"  ❌ Login Error\n"
+                        else:
+                            blocked = []
+                            if result.get('comment_blocked'): blocked.append('Comment')
+                            if result.get('like_blocked'): blocked.append('Like')
+                            if result.get('follow_blocked'): blocked.append('Follow')
+                            if result.get('dm_blocked'): blocked.append('DM')
+                            if result.get('upload_blocked'): blocked.append('Upload')
+                            if result.get('live_blocked'): blocked.append('Live')
+                            
+                            if blocked:
+                                summary += f"  ⚠️ Blocked: {', '.join(blocked)}\n"
+                            else:
+                                summary += f"  ✅ All features OK\n"
+                        summary += "\n"
+                    
+                    progress_dialog.after(0, lambda: progress_dialog.destroy())
+                    progress_dialog.after(0, lambda: messagebox.showinfo("Hoàn thành", summary))
+                    progress_dialog.after(0, load_sessions)
+                    
+                except Exception as e:
+                    progress_dialog.after(0, lambda: progress_dialog.destroy())
+                    progress_dialog.after(0, lambda: messagebox.showerror("Lỗi", f"Lỗi khi check features: {e}"))
+            
+            # Run in thread
+            import threading
+            threading.Thread(target=check_features_thread, daemon=True).start()
+        
+        def check_live_die_status():
+            """Check live/die status của profiles được chọn trong dialog (hoặc tất cả nếu chọn tất cả)"""
+            # ✅ Get selected profiles from sessions_tree (trong dialog này)
+            selected_profiles = []
+            try:
+                selection = sessions_tree.selection()
+                if selection:
+                    # Get profile names from selected items (column 0)
+                    selected_profiles = [sessions_tree.item(item)['values'][0] for item in selection]
+            except Exception as e:
+                print(f"[CHECK-LIVE] Error getting selection: {e}")
+            
+            # Nếu không có profile nào được chọn, hỏi có muốn check tất cả không
+            if not selected_profiles:
+                if not messagebox.askyesno("Xác nhận", "Không có profile nào được chọn.\n\nKiểm tra trạng thái live/die của TẤT CẢ accounts?\nQuá trình này có thể mất vài phút."):
+                    return
+                check_all = True
+            else:
+                if not messagebox.askyesno("Xác nhận", f"Kiểm tra trạng thái live/die của {len(selected_profiles)} profile(s) đã chọn?\nQuá trình này có thể mất vài phút."):
+                    return
+                check_all = False
+            
+            # Import modules
+            try:
+                from core.tiktok_status_checker import check_tiktok_live_status
+                import asyncio
+            except ImportError as e:
+                messagebox.showerror("Lỗi", f"Không thể import modules: {e}")
+                return
+            
+            # Get sessions
+            success, all_sessions = self.manager.get_all_tiktok_sessions()
+            if not success or not all_sessions:
+                messagebox.showinfo("Thông báo", "Không có sessions nào để kiểm tra!")
+                return
+            
+            # ✅ Filter sessions based on selection
+            if check_all:
+                sessions = all_sessions
+            else:
+                sessions = {k: v for k, v in all_sessions.items() if k in selected_profiles}
+            
+            if not sessions:
+                messagebox.showinfo("Thông báo", "Không có sessions nào để kiểm tra!")
+                return
+            
+            # Progress dialog
+            progress_dialog = tk.Toplevel(dialog)
+            progress_dialog.title("Đang kiểm tra...")
+            progress_dialog.geometry("400x150")
+            progress_dialog.transient(dialog)
+            progress_dialog.grab_set()
+            
+            progress_frame = ttk.Frame(progress_dialog, padding="20")
+            progress_frame.pack(fill=tk.BOTH, expand=True)
+            
+            status_label = ttk.Label(progress_frame, text="Đang khởi động...", font=("Segoe UI", 10))
+            status_label.pack(pady=(0, 10))
+            
+            progress_bar = ttk.Progressbar(progress_frame, mode='determinate', length=300)
+            progress_bar.pack(pady=(0, 10))
+            
+            result_label = ttk.Label(progress_frame, text="", font=("Segoe UI", 9))
+            result_label.pack()
+            
+            # Check function
+            async def check_all_async():
+                results = {'live': 0, 'die': 0, 'unknown': 0}
+                total = len(sessions)
+                
+                for idx, (profile_name, session_data) in enumerate(sessions.items(), 1):
+                    username = session_data.get('username') or session_data.get('email', '').split('@')[0]
+                    
+                    # Update UI - Check if dialog still exists
+                    try:
+                        if progress_dialog.winfo_exists():
+                            status_label.config(text=f"Checking {profile_name}...")
+                            progress_bar.config(value=(idx/total)*100)
+                    except:
+                        pass
+                    
+                    try:
+                        # Launch profile to check
+                        from playwright.async_api import async_playwright
+                        
+                        async with async_playwright() as p:
+                            browser = await p.chromium.launch(headless=True)
+                            page = await browser.new_page()
+                            
+                            status = await check_tiktok_live_status(page, username)
+                            results[status] += 1
+                            
+                            # Save status to session
+                            session_data['account_status'] = status
+                            session_data['last_checked'] = datetime.now().isoformat()
+                            self.manager.save_tiktok_session(profile_name, session_data)
+                            
+                            await browser.close()
+                            
+                    except Exception as e:
+                        print(f"Error checking {profile_name}: {e}")
+                        results['unknown'] += 1
+                    
+                    # Update result - Check if dialog still exists
+                    try:
+                        if progress_dialog.winfo_exists():
+                            result_label.config(
+                                text=f"Live: {results['live']} | Die: {results['die']} | Unknown: {results['unknown']}"
+                            )
+                    except:
+                        pass
+                
+                return results
+            
+            def run_check():
+                try:
+                    results = asyncio.run(check_all_async())
+                    progress_dialog.after(0, lambda: progress_dialog.destroy())
+                    progress_dialog.after(0, lambda: messagebox.showinfo(
+                        "Hoàn thành",
+                        f"✅ Đã kiểm tra {len(sessions)} accounts:\n\n"
+                        f"🟢 Live: {results['live']}\n"
+                        f"🔴 Die: {results['die']}\n"
+                        f"⚪ Unknown: {results['unknown']}"
+                    ))
+                    progress_dialog.after(0, load_sessions)
+                except Exception as e:
+                    progress_dialog.after(0, lambda: progress_dialog.destroy())
+                    progress_dialog.after(0, lambda: messagebox.showerror("Lỗi", f"Lỗi khi kiểm tra: {e}"))
+            
+            # Run in thread
+            import threading
+            threading.Thread(target=run_check, daemon=True).start()
+        
+        def delete_die_accounts():
+            """Xóa tất cả accounts có status = die"""
+            success, sessions = self.manager.get_all_tiktok_sessions()
+            if not success or not sessions:
+                messagebox.showinfo("Thông báo", "Không có sessions nào!")
+                return
+            
+            # Count die accounts
+            die_accounts = [name for name, data in sessions.items() if data.get('account_status') == 'die']
+            
+            if not die_accounts:
+                messagebox.showinfo("Thông báo", "Không có account nào có status 'die'!")
+                return
+            
+            if not messagebox.askyesno("Xác nhận", f"Xóa {len(die_accounts)} accounts có status 'die'?"):
+                return
+            
+            # Delete
+            deleted = 0
+            for profile_name in die_accounts:
+                success, _ = self.manager.clear_tiktok_session(profile_name)
+                if success:
+                    deleted += 1
+            
+            messagebox.showinfo("Thành công", f"Đã xóa {deleted}/{len(die_accounts)} accounts")
+            load_sessions()
+        
+        def delete_accounts_without_profiles():
+            """Xóa accounts không còn profile Chrome"""
+            success, sessions = self.manager.get_all_tiktok_sessions()
+            if not success or not sessions:
+                messagebox.showinfo("Thông báo", "Không có sessions nào!")
+                return
+            
+            # Get all profiles
+            all_profiles = set(self.manager.get_all_profiles())
+            
+            # Find sessions without profiles
+            orphan_sessions = [name for name in sessions.keys() if name not in all_profiles]
+            
+            if not orphan_sessions:
+                messagebox.showinfo("Thông báo", "Tất cả sessions đều có profile Chrome tương ứng!")
+                return
+            
+            if not messagebox.askyesno("Xác nhận", 
+                f"Tìm thấy {len(orphan_sessions)} sessions không còn profile Chrome.\n\n"
+                f"Xóa các sessions này?"):
+                return
+            
+            # Delete
+            deleted = 0
+            for profile_name in orphan_sessions:
+                success, _ = self.manager.clear_tiktok_session(profile_name)
+                if success:
+                    deleted += 1
+            
+            messagebox.showinfo("Thành công", f"Đã xóa {deleted}/{len(orphan_sessions)} sessions")
+            load_sessions()
+        
+        def retry_failed_logins():
+            """Retry login cho các accounts failed trong profiles được chọn trong dialog (hoặc tất cả)"""
+            # ✅ Get selected profiles from sessions_tree (trong dialog này)
+            selected_profiles = []
+            try:
+                selection = sessions_tree.selection()
+                if selection:
+                    # Get profile names from selected items (column 0)
+                    selected_profiles = [sessions_tree.item(item)['values'][0] for item in selection]
+            except Exception as e:
+                print(f"[RETRY-LOGIN] Error getting selection: {e}")
+            
+            # Get sessions
+            success, all_sessions = self.manager.get_all_tiktok_sessions()
+            if not success or not all_sessions:
+                messagebox.showinfo("Thông báo", "Không có sessions nào!")
+                return
+            
+            # ✅ Filter sessions based on selection
+            if selected_profiles:
+                sessions = {k: v for k, v in all_sessions.items() if k in selected_profiles}
+                scope_text = f"{len(selected_profiles)} profile(s) đã chọn"
+            else:
+                sessions = all_sessions
+                scope_text = "TẤT CẢ profiles"
+            
+            if not sessions:
+                messagebox.showinfo("Thông báo", "Không có sessions nào trong phạm vi đã chọn!")
+                return
+            
+            # Find failed accounts (die, unknown, login_failed, network_error)
+            failed_accounts = []
+            all_profiles = self.manager.get_all_profiles()
+            
+            # ✅ Create case-insensitive profile lookup
+            profile_lookup = {p.lower(): p for p in all_profiles}
+            
+            print(f"\n[RETRY] Checking {len(sessions)} sessions for failed accounts...")
+            for name, data in sessions.items():
+                status = data.get('account_status', 'unknown')
+                login_success = data.get('login_success')
+                
+                # ✅ Find actual profile name (case-insensitive)
+                actual_profile_name = profile_lookup.get(name.lower())
+                
+                # ✅ DEBUG: Log mỗi session
+                print(f"[RETRY] Profile: {name}")
+                print(f"  - account_status: {status}")
+                print(f"  - login_success: {login_success}")
+                print(f"  - actual profile: {actual_profile_name}")
+                
+                # ✅ Check multiple failure conditions
+                # Nếu login_success là False HOẶC status là failed
+                # Check nhiều format của login_success
+                login_is_failed = (
+                    login_success == False or 
+                    login_success is False or
+                    login_success == 'False' or
+                    login_success == 'false' or
+                    login_success == 0 or
+                    login_success == '0' or
+                    login_success == 'failed'
+                )
+                
+                status_is_failed = status in ('die', 'unknown', 'login_failed', 'network_error', 'failed')
+                
+                is_failed = login_is_failed or status_is_failed
+                
+                if is_failed:
+                    # Check if profile exists (case-insensitive)
+                    if actual_profile_name:
+                        # ✅ Use actual profile name (with correct case)
+                        failed_accounts.append((actual_profile_name, data))
+                        print(f"  ✅ ADDED to retry list (using: {actual_profile_name})")
+                    else:
+                        print(f"  ❌ Profile not found in Chrome profiles")
+                        print(f"  Available profiles: {', '.join(all_profiles[:5])}...")
+                else:
+                    print(f"  ⏭️ SKIPPED (not failed)")
+            
+            if not failed_accounts:
+                messagebox.showinfo("Thông báo", f"Không có account nào cần retry login trong {scope_text}!")
+                return
+            
+            if not messagebox.askyesno("Xác nhận", 
+                f"Retry login cho {len(failed_accounts)} accounts failed trong {scope_text}?\n\n"
+                f"Quá trình này sẽ:\n"
+                f"- Mở từng profile\n"
+                f"- Thử login lại với credentials đã lưu\n"
+                f"- Tự động detect loại login (variant 1/2/3)\n"
+                f"- Cập nhật status\n\n"
+                f"Có thể mất vài phút..."):
+                return
+            
+            # Progress dialog
+            progress_dialog = tk.Toplevel(dialog)
+            progress_dialog.title("Đang retry login...")
+            progress_dialog.geometry("500x200")
+            progress_dialog.transient(dialog)
+            progress_dialog.grab_set()
+            
+            progress_frame = ttk.Frame(progress_dialog, padding="20")
+            progress_frame.pack(fill=tk.BOTH, expand=True)
+            
+            status_label = ttk.Label(progress_frame, text="Đang khởi động...", font=("Segoe UI", 10))
+            status_label.pack(pady=(0, 10))
+            
+            progress_bar = ttk.Progressbar(progress_frame, mode='determinate', length=400)
+            progress_bar.pack(pady=(0, 10))
+            
+            result_label = ttk.Label(progress_frame, text="", font=("Segoe UI", 9))
+            result_label.pack()
+            
+            def retry_login_thread():
+                results = {'success': 0, 'failed': 0, 'error': 0}
+                total = len(failed_accounts)
+                
+                for idx, (profile_name, session_data) in enumerate(failed_accounts, 1):
+                    try:
+                        # Update UI
+                        progress_dialog.after(0, lambda p=profile_name: status_label.config(
+                            text=f"Retry login {p}... ({idx}/{total})"
+                        ))
+                        progress_dialog.after(0, lambda v=(idx/total)*100: progress_bar.config(value=v))
+                        
+                        # Detect variant from session data
+                        raw_line = session_data.get('raw_line')
+                        if not raw_line:
+                            # Reconstruct raw_line from session data
+                            username = session_data.get('username', '')
+                            password = session_data.get('password', '')
+                            email = session_data.get('email', '')
+                            hotmail_user = session_data.get('hotmail_user', '')
+                            hotmail_pass = session_data.get('hotmail_pass', '')
+                            session_token = session_data.get('session_token', '')
+                            token_id = session_data.get('token_id', '')
+                            
+                            # Detect variant
+                            if session_token and token_id:
+                                # Variant 3
+                                raw_line = f"{username}|{password}|{hotmail_user}|{hotmail_pass}|{session_token}|{token_id}"
+                            elif hotmail_user and hotmail_pass:
+                                # Variant 2
+                                raw_line = f"{username}|{password}|{hotmail_user}|{hotmail_pass}"
+                            else:
+                                # Variant 1
+                                raw_line = f"{email}|{password}"
+                        
+                        # Parse account to get variant
+                        account_info = parse_account_line(raw_line)
+                        variant = account_info.get('variant', 1)
+                        
+                        print(f"[RETRY-LOGIN] {profile_name} - Variant {variant}")
+                        
+                        # ✅ Prepare login_data properly
+                        login_data = {
+                            'username': session_data.get('username') or session_data.get('login_identifier') or session_data.get('email', ''),
+                            'password': session_data.get('password', ''),
+                            'email': session_data.get('email', ''),
+                            'twofa': '',
+                            'username_has_warning_icon': False
+                        }
+                        
+                        # Add variant-specific fields
+                        if variant >= 2:
+                            login_data['otp_email'] = session_data.get('otp_email') or session_data.get('hotmail_user', '')
+                            login_data['email_password'] = session_data.get('email_password') or session_data.get('hotmail_pass', '')
+                            login_data['hotmail_user'] = session_data.get('hotmail_user', '')
+                            login_data['hotmail_pass'] = session_data.get('hotmail_pass', '')
+                        
+                        if variant == 3:
+                            login_data['session_token'] = session_data.get('session_token', '')
+                            login_data['user_id'] = session_data.get('user_id', '')
+                        
+                        print(f"[RETRY-LOGIN] {profile_name} - Username: {login_data['username'][:10]}...")
+                        
+                        # Launch profile with auto-login
+                        login_success, result = self.manager.launch_chrome_profile(
+                            profile_name,
+                            hidden=False,  # ✅ Visible để dễ debug
+                            auto_login=True,  # ✅ Enable auto-login
+                            login_data=login_data,  # ✅ Use prepared login_data
+                            start_url="https://www.tiktok.com/login/phone-or-email/email"
+                        )
+                        
+                        if login_success:
+                            # Login success - update status
+                            session_data['account_status'] = 'live'
+                            session_data['last_login_attempt'] = datetime.now().isoformat()
+                            session_data['login_success'] = True
+                            self.manager.save_tiktok_session(profile_name, session_data)
+                            results['success'] += 1
+                            print(f"[RETRY-LOGIN] ✅ {profile_name} - Login success")
+                            
+                            # Close browser
+                            try:
+                                if hasattr(result, 'close'):
+                                    result.close()
+                                elif isinstance(result, dict) and 'page' in result:
+                                    result['page'].close()
+                            except:
+                                pass
+                        else:
+                            # Login failed
+                            session_data['account_status'] = 'die'
+                            session_data['last_login_attempt'] = datetime.now().isoformat()
+                            session_data['login_success'] = False
+                            session_data['login_error'] = str(result) if result else 'Unknown error'
+                            self.manager.save_tiktok_session(profile_name, session_data)
+                            results['failed'] += 1
+                            print(f"[RETRY-LOGIN] ❌ {profile_name} - Login failed: {result}")
+                        
+                        # Update result
+                        progress_dialog.after(0, lambda r=results: result_label.config(
+                            text=f"✅ Success: {r['success']} | ❌ Failed: {r['failed']} | ⚠️ Error: {r['error']}"
+                        ))
+                        
+                        # Delay between retries
+                        time.sleep(3)
+                        
+                    except Exception as e:
+                        print(f"[RETRY-LOGIN] Error with {profile_name}: {e}")
+                        results['error'] += 1
+                        progress_dialog.after(0, lambda r=results: result_label.config(
+                            text=f"✅ Success: {r['success']} | ❌ Failed: {r['failed']} | ⚠️ Error: {r['error']}"
+                        ))
+                
+                # Done
+                progress_dialog.after(0, lambda: progress_dialog.destroy())
+                progress_dialog.after(0, lambda: messagebox.showinfo(
+                    "Hoàn thành",
+                    f"✅ Đã retry {total} accounts:\n\n"
+                    f"🟢 Success: {results['success']}\n"
+                    f"🔴 Failed: {results['failed']}\n"
+                    f"⚠️ Error: {results['error']}"
+                ))
+                progress_dialog.after(0, load_sessions)
+            
+            # Run in thread
+            import threading
+            threading.Thread(target=retry_login_thread, daemon=True).start()
         
         def view_session_details():
             selection = sessions_tree.selection()
@@ -6766,15 +8434,28 @@ testuser|testpass123
             except Exception as e:
                 messagebox.showerror("Lỗi", f"Không thể xuất dữ liệu: {str(e)}")
         
-        # Buttons
-        ttk.Button(buttons_frame, text="🔄 Làm mới", command=refresh_sessions).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(buttons_frame, text="👁️ Xem chi tiết", command=view_session_details).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(buttons_frame, text="🔐 Đổi mật khẩu", command=change_password).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(buttons_frame, text="📧 Lấy MX", command=get_microsoft_mx).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(buttons_frame, text="📤 Xuất dữ liệu", command=export_data).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(buttons_frame, text="🗑️ Xóa session", command=delete_session).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(buttons_frame, text="🗑️ Xóa tất cả", command=clear_all_sessions).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(buttons_frame, text="❌ Đóng", command=dialog.destroy).pack(side=tk.RIGHT)
+        # Buttons - Row 1
+        buttons_row1 = ttk.Frame(buttons_frame)
+        buttons_row1.pack(fill=tk.X, pady=(0, 5))
+        
+        ttk.Button(buttons_row1, text="🔄 Làm mới", command=refresh_sessions).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(buttons_row1, text="👁️ Xem chi tiết", command=view_session_details).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(buttons_row1, text="🔐 Đổi mật khẩu", command=change_password).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(buttons_row1, text="📧 Lấy MX", command=get_microsoft_mx).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(buttons_row1, text="📤 Xuất dữ liệu", command=export_data).pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Buttons - Row 2 (New features)
+        buttons_row2 = ttk.Frame(buttons_frame)
+        buttons_row2.pack(fill=tk.X)
+        
+        ttk.Button(buttons_row2, text="🔍 Check Live/Die", command=check_live_die_status).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(buttons_row2, text="🎯 Check Features", command=lambda: check_feature_blocks()).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(buttons_row2, text="🔄 Retry Login Failed", command=retry_failed_logins).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(buttons_row2, text="🗑️ Xóa Die", command=delete_die_accounts).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(buttons_row2, text="🗑️ Xóa không có Profile", command=delete_accounts_without_profiles).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(buttons_row2, text="🗑️ Xóa session", command=delete_session).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(buttons_row2, text="🗑️ Xóa tất cả", command=clear_all_sessions).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(buttons_row2, text="❌ Đóng", command=dialog.destroy).pack(side=tk.RIGHT)
         
         # Bind double-click to view details
         sessions_tree.bind('<Double-1>', lambda e: view_session_details())
@@ -7174,7 +8855,7 @@ testuser|testpass123
                 # Try to load from TikTok button data (if available)
                 try:
                     # Check if there's a TikTok button data file
-                    tiktok_data_path = os.path.join(self.manager.base_dir, 'config', 'tiktok_accounts.json')
+                    tiktok_data_path = os.path.join(os.getcwd(), 'config', 'tiktok_accounts.json')
                     if os.path.exists(tiktok_data_path):
                         import json
                         with open(tiktok_data_path, 'r', encoding='utf-8') as f:
@@ -7817,7 +9498,7 @@ Last Login: {login_time}
                                         pass
                                 
                                 sessions_tree.insert("", tk.END, values=(
-                                    profile_name,
+                                    str(profile_name),  # Convert to string to avoid int issues
                                     session_data.get('email', 'N/A'),
                                     session_data.get('username', 'N/A'),
                                     session_data.get('password', 'N/A'),
@@ -8365,6 +10046,14 @@ Last Login: {login_time}
                                     bg='#9b59b6', fg='white', relief='flat', padx=20, pady=8,
                                     cursor='hand2')
         force_refresh_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Archived data button
+        archived_btn = tk.Button(button_frame, text="📦 Data cũ (đã sử dụng)", 
+                                command=self._open_archived_data,
+                                font=('Segoe UI', 9, 'bold'),
+                                bg='#8e44ad', fg='white', relief='flat', 
+                                padx=20, pady=8, cursor='hand2')
+        archived_btn.pack(side=tk.LEFT, padx=(0, 10))
         
         # TikTok session management buttons
         view_sessions_btn = tk.Button(button_frame, text="💾 Xem Sessions", 
@@ -9645,6 +11334,21 @@ Bạn có muốn bắt đầu treo livestream?"""
         # Focus vào nút Cấu Hình
         config_btn.focus()
         
+    def stop_profile_by_name(self, profile_name: str):
+        """Dừng profile theo tên"""
+        if profile_name in self.drivers:
+            try:
+                self.drivers[profile_name].quit()
+                del self.drivers[profile_name]
+                self.status_label.config(text=f"Đã dừng {profile_name}")
+                self.refresh_profiles()
+                print(f"[STOP] ✅ Đã dừng profile {profile_name}")
+            except Exception as e:
+                print(f"[ERROR] Không thể dừng profile {profile_name}: {e}")
+                raise
+        else:
+            print(f"[WARNING] Profile {profile_name} không đang chạy trong drivers")
+    
     def stop_profile(self):
         """Dừng profile"""
         selection = self.tree.selection()
@@ -9652,14 +11356,11 @@ Bạn có muốn bắt đầu treo livestream?"""
             messagebox.showwarning("Cảnh báo", "Vui lòng chọn một profile!")
             return
         
-        profile_name = self.tree.item(selection[0])["values"][0]
+        profile_name = self.tree.item(selection[0])["text"]
         
         if profile_name in self.drivers:
             try:
-                self.drivers[profile_name].quit()
-                del self.drivers[profile_name]
-                self.status_label.config(text=f"Đã dừng {profile_name}")
-                self.refresh_profiles()
+                self.stop_profile_by_name(profile_name)
             except Exception as e:
                 messagebox.showerror("Lỗi", f"Không thể dừng profile: {str(e)}")
         else:
@@ -9673,7 +11374,7 @@ Bạn có muốn bắt đầu treo livestream?"""
             messagebox.showwarning("Cảnh báo", "Vui lòng chọn một profile!")
             return
         
-        profile_name = self.tree.item(selection[0])["values"][0]
+        profile_name = self.tree.item(selection[0])["text"]
         
         # Tạo dialog xuất cookies
         export_dialog = tk.Toplevel(self.root)
@@ -9800,7 +11501,7 @@ Cookies sẽ được lưu với định dạng chuẩn để có thể import v
             messagebox.showwarning("Cảnh báo", "Vui lòng chọn một profile!")
             return
         
-        profile_name = self.tree.item(selection[0])["values"][0]
+        profile_name = self.tree.item(selection[0])["text"]
         
         # Chọn file cookies
         file_path = filedialog.askopenfilename(
@@ -9912,7 +11613,7 @@ Cookies sẽ được lưu với định dạng chuẩn để có thể import v
             messagebox.showwarning("Cảnh báo", "Vui lòng chọn một profile!")
             return
         
-        profile_name = self.tree.item(selection[0])["values"][0]
+        profile_name = self.tree.item(selection[0])["text"]
         
         # Tạo cửa sổ cấu hình đăng nhập
         login_window = tk.Toplevel(self.root)
@@ -9979,7 +11680,7 @@ Cookies sẽ được lưu với định dạng chuẩn để có thể import v
             messagebox.showwarning("Cảnh báo", "Vui lòng chọn một profile!")
             return
         
-        profile_name = self.tree.item(selection[0])["values"][0]
+        profile_name = self.tree.item(selection[0])["text"]
         
         # Tạo dialog đăng nhập Chrome
         chrome_login_dialog = tk.Toplevel(self.root)
@@ -10072,7 +11773,7 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
             messagebox.showwarning("Cảnh báo", "Vui lòng chọn một profile!")
             return
         
-        profile_name = self.tree.item(selection[0])["values"][0]
+        profile_name = self.tree.item(selection[0])["text"]
         
         if messagebox.askyesno("Xác nhận", f"Bạn có chắc muốn xóa profile '{profile_name}'?"):
             # Dừng profile nếu đang chạy
@@ -11186,7 +12887,7 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
             messagebox.showerror("Error", f"Failed to open quick installation dialog: {str(e)}")
     
     def configure_proxy_selected(self):
-        """Configure proxy for selected profiles"""
+        """Configure proxy for selected profiles (save to config.ini, no extension)"""
         try:
             # Get selected profiles from the profiles tab
             if hasattr(self, 'tree') and self.tree.selection():
@@ -11199,59 +12900,113 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
                 messagebox.showwarning("Warning", "No profiles selected!")
                 return
             
-            # Get proxy configuration
+            # Get proxy configuration from UI
             proxy_config = self._get_proxy_config_from_ui()
             if not proxy_config:
                 return
             
+            # Build proxy string
+            server = proxy_config.get('host') or proxy_config.get('server', '')
+            port = proxy_config.get('port', '')
+            username = proxy_config.get('username', '')
+            password = proxy_config.get('password', '')
+            
+            if not server or not port:
+                messagebox.showerror("Error", "Please enter proxy server and port")
+                return
+            
+            if username and password:
+                proxy_string = f"http://{username}:{password}@{server}:{port}"
+            else:
+                proxy_string = f"http://{server}:{port}"
+            
             # Confirm configuration
-            result = messagebox.askyesno("Confirm Configuration", 
-                                       f"Configure SwitchyOmega 3 proxy for {len(selected_profiles)} selected profiles?\n\n"
-                                       f"Proxy: {proxy_config['protocol'].upper()} {proxy_config['host']}:{proxy_config['port']}\n"
-                                       f"Profile: {proxy_config['name']}")
+            result = messagebox.askyesno(
+                "Confirm Configuration",
+                f"Configure proxy for {len(selected_profiles)} selected profiles?\n\n"
+                f"Proxy: {server}:{port}\n"
+                f"Username: {username if username else 'None'}\n"
+                f"Method: CDP Authentication (no extension)"
+            )
             
             if not result:
                 return
             
-            self.extension_status_text.delete(1.0, tk.END)
-            self.extension_status_text.insert(tk.END, f"🔧 Configuring SwitchyOmega 3 for {len(selected_profiles)} profiles...\n\n")
-            self.extension_status_text.update()
+            # Clear status
+            if hasattr(self, 'proxy_status_text'):
+                self.proxy_status_text.delete(1.0, tk.END)
+                status_widget = self.proxy_status_text
+            elif hasattr(self, 'extension_status_text'):
+                self.extension_status_text.delete(1.0, tk.END)
+                status_widget = self.extension_status_text
+            else:
+                status_widget = None
+            
+            def log(msg):
+                if status_widget:
+                    status_widget.insert(tk.END, f"{msg}\n")
+                    status_widget.see(tk.END)
+                    status_widget.update()
+            
+            log(f"🔧 Configuring proxy for {len(selected_profiles)} profiles...")
+            log(f"📋 Proxy: {server}:{port}")
+            log(f"👤 Username: {username if username else 'None'}")
+            log(f"🔐 Method: CDP Authentication (no extension needed)")
+            log("=" * 50)
             
             def config_thread():
                 try:
-                    success_count, results = self.manager.bulk_configure_switchyomega(selected_profiles, proxy_config)
+                    success_count = 0
+                    failed_count = 0
                     
-                    self.extension_status_text.insert(tk.END, "📋 Configuration Results:\n")
-                    self.extension_status_text.insert(tk.END, "=" * 50 + "\n")
+                    for profile in selected_profiles:
+                        try:
+                            log(f"💾 Saving proxy for {profile}...")
+                            success = self.manager.proxy_mgr.set_profile_proxy(profile, proxy_string)
+
+                            if success:
+                                log(f"   ✅ Success: {profile}")
+                                success_count += 1
+                            else:
+                                log(f"   ❌ Failed: {profile}")
+                                failed_count += 1
+                                
+                        except Exception as e:
+                            log(f"   ❌ Error: {profile} - {e}")
+                            failed_count += 1
                     
-                    for result in results:
-                        self.extension_status_text.insert(tk.END, f"{result}\n")
-                        self.extension_status_text.update()
-                        time.sleep(0.1)
-                    
-                    self.extension_status_text.insert(tk.END, "\n" + "=" * 50 + "\n")
-                    self.extension_status_text.insert(tk.END, f"🎉 Configuration completed!\n")
-                    self.extension_status_text.insert(tk.END, f"✅ Success: {success_count}/{len(selected_profiles)}\n")
-                    self.extension_status_text.insert(tk.END, f"❌ Failed: {len(selected_profiles) - success_count}/{len(selected_profiles)}\n")
-                    
-                    self.extension_status_text.see(tk.END)
+                    log("=" * 50)
+                    log(f"🎉 Configuration completed!")
+                    log(f"✅ Success: {success_count}/{len(selected_profiles)}")
+                    log(f"❌ Failed: {failed_count}/{len(selected_profiles)}")
+                    # Refresh profiles tree
+                    try:
+                        self.root.after(0, self.refresh_profiles)
+                    except:
+                        pass
                     
                     # Show completion message
-                    self.root.after(0, lambda: messagebox.showinfo("Configuration Complete", 
-                        f"SwitchyOmega 3 configuration completed!\n\n✅ Success: {success_count}\n❌ Failed: {len(selected_profiles) - success_count}"))
+                    self.root.after(0, lambda: messagebox.showinfo(
+                        "Configuration Complete",
+                        f"Proxy configuration completed!\n\n"
+                        f"✅ Success: {success_count}\n"
+                        f"❌ Failed: {failed_count}\n\n"
+                        f"Proxy will be used automatically when launching profiles."
+                    ))
                     
                 except Exception as e:
-                    self.extension_status_text.insert(tk.END, f"\n❌ Error during configuration: {str(e)}\n")
-                    self.extension_status_text.see(tk.END)
-                    self.root.after(0, lambda: messagebox.showerror("Configuration Error", f"Configuration failed: {str(e)}"))
+                    log(f"\n❌ Error during configuration: {str(e)}")
+                    self.root.after(0, lambda: messagebox.showerror(
+                        "Configuration Error",
+                        f"Configuration failed: {str(e)}"
+                    ))
             
             threading.Thread(target=config_thread, daemon=True).start()
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to configure proxy: {str(e)}")
-    
     def configure_proxy_all(self):
-        """Configure proxy for all profiles"""
+        """Configure proxy for all profiles (save to config.ini, no extension)"""
         try:
             all_profiles = self.manager.get_all_profiles()
             
@@ -11259,51 +13014,95 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
                 messagebox.showwarning("Warning", "No profiles found!")
                 return
             
-            # Get proxy configuration
+            # Get proxy configuration from UI
             proxy_config = self._get_proxy_config_from_ui()
             if not proxy_config:
                 return
             
+            # Build proxy string
+            server = proxy_config.get('host') or proxy_config.get('server', '')
+            port = proxy_config.get('port', '')
+            username = proxy_config.get('username', '')
+            password = proxy_config.get('password', '')
+            
+            if not server or not port:
+                messagebox.showerror("Error", "Please enter proxy server and port")
+                return
+            
+            if username and password:
+                proxy_string = f"http://{username}:{password}@{server}:{port}"
+            else:
+                proxy_string = f"http://{server}:{port}"
+            
             # Confirm configuration
             result = messagebox.askyesno("Confirm Configuration", 
-                                       f"Configure SwitchyOmega 3 proxy for ALL {len(all_profiles)} profiles?\n\n"
-                                       f"Proxy: {proxy_config['protocol'].upper()} {proxy_config['host']}:{proxy_config['port']}\n"
-                                       f"Profile: {proxy_config['name']}\n\n"
-                                       "This may take several minutes depending on the number of profiles.")
+                                       f"Configure proxy for ALL {len(all_profiles)} profiles?\n\n"
+                                       f"Proxy: {server}:{port}\n"
+                                       f"Username: {username if username else 'None'}\n"
+                                       f"Method: CDP Authentication (no extension)\n\n"
+                                       "This may take a few seconds.")
             
             if not result:
                 return
             
-            self.extension_status_text.delete(1.0, tk.END)
-            self.extension_status_text.insert(tk.END, f"🔧 Configuring SwitchyOmega 3 for ALL {len(all_profiles)} profiles...\n\n")
-            self.extension_status_text.update()
+            # Clear status
+            if hasattr(self, 'proxy_status_text'):
+                self.proxy_status_text.delete(1.0, tk.END)
+                status_widget = self.proxy_status_text
+            elif hasattr(self, 'extension_status_text'):
+                self.extension_status_text.delete(1.0, tk.END)
+                status_widget = self.extension_status_text
+            else:
+                status_widget = None
+            
+            def log(msg):
+                if status_widget:
+                    status_widget.insert(tk.END, f"{msg}\n")
+                    status_widget.see(tk.END)
+                    status_widget.update()
+            
+            log(f"🔧 Configuring proxy for ALL {len(all_profiles)} profiles...")
+            log(f"📋 Proxy: {server}:{port}")
+            log(f"👤 Username: {username if username else 'None'}")
+            log(f"🔐 Method: CDP Authentication (no extension needed)")
+            log("=" * 50)
             
             def config_thread():
                 try:
-                    success_count, results = self.manager.bulk_configure_switchyomega(all_profiles, proxy_config)
+                    success_count = 0
+                    failed_count = 0
                     
-                    self.extension_status_text.insert(tk.END, "📋 Configuration Results:\n")
-                    self.extension_status_text.insert(tk.END, "=" * 50 + "\n")
+                    for profile in all_profiles:
+                        try:
+                            log(f"💾 Saving proxy for {profile}...")
+                            success = self.manager.proxy_mgr.set_profile_proxy(profile, proxy_string)
+                            
+                            if success:
+                                success_count += 1
+                            else:
+                                failed_count += 1
+                                
+                        except Exception as e:
+                            log(f"   ❌ Error: {profile} - {e}")
+                            failed_count += 1
                     
-                    for result in results:
-                        self.extension_status_text.insert(tk.END, f"{result}\n")
-                        self.extension_status_text.update()
-                        time.sleep(0.1)
+                    log("=" * 50)
+                    log(f"🎉 Bulk configuration completed!")
+                    log(f"✅ Success: {success_count}/{len(all_profiles)}")
+                    log(f"❌ Failed: {failed_count}/{len(all_profiles)}")
                     
-                    self.extension_status_text.insert(tk.END, "\n" + "=" * 50 + "\n")
-                    self.extension_status_text.insert(tk.END, f"🎉 Bulk configuration completed!\n")
-                    self.extension_status_text.insert(tk.END, f"✅ Success: {success_count}/{len(all_profiles)}\n")
-                    self.extension_status_text.insert(tk.END, f"❌ Failed: {len(all_profiles) - success_count}/{len(all_profiles)}\n")
-                    
-                    self.extension_status_text.see(tk.END)
+                    # Refresh profiles tree
+                    try:
+                        self.root.after(0, self.refresh_profiles)
+                    except:
+                        pass
                     
                     # Show completion message
                     self.root.after(0, lambda: messagebox.showinfo("Bulk Configuration Complete", 
-                        f"Bulk SwitchyOmega 3 configuration completed!\n\n✅ Success: {success_count}\n❌ Failed: {len(all_profiles) - success_count}"))
+                        f"Proxy configuration completed!\n\n✅ Success: {success_count}\n❌ Failed: {failed_count}\n\nProxy will be used automatically when launching profiles."))
                     
                 except Exception as e:
-                    self.extension_status_text.insert(tk.END, f"\n❌ Error during bulk configuration: {str(e)}\n")
-                    self.extension_status_text.see(tk.END)
+                    log(f"\n❌ Error during bulk configuration: {str(e)}")
                     self.root.after(0, lambda: messagebox.showerror("Configuration Error", f"Bulk configuration failed: {str(e)}"))
             
             threading.Thread(target=config_thread, daemon=True).start()
@@ -12015,6 +13814,24 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
         except Exception as e:
             print(f"Warning: Could not copy all extension settings: {str(e)}")
     
+    def _open_archived_data(self):
+        """Open archived TikTok data dialog"""
+        try:
+            # Callback to refresh main list when account is restored
+            def on_restore():
+                # Refresh the main TikTok management list if it exists
+                # This will be called from the archived data dialog
+                print("[ARCHIVED] Account restored, refreshing main list...")
+            
+            # Open archived data dialog
+            open_archived_data_dialog(
+                parent=self.root,
+                base_dir=os.getcwd(),
+                on_restore_callback=on_restore
+            )
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể mở archived data: {e}")
+            print(f"[ARCHIVED] Error opening dialog: {e}")
 
     def run(self):
         """Chạy ứng dụng"""
@@ -13285,7 +15102,7 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
             self.log_proxy_status(f"❌ Error parsing proxy: {e}")
     
     def apply_proxy_input(self):
-        """Apply proxy to target profile by saving to profile_settings.json."""
+        """Apply proxy to target profile by saving to config.ini (CDP will handle auth)"""
         if not hasattr(self, 'parsed_proxy'):
             self.log_proxy_status("❌ Please parse proxy first")
             return
@@ -13296,45 +15113,43 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
             return
         
         try:
-            self.log_proxy_status(f"💾 Saving proxy to profile_settings.json for: {target_profile}")
+            self.log_proxy_status(f"💾 Saving proxy to config.ini for: {target_profile}")
             
-            # Get profile path
-            profile_path = os.path.join(os.getcwd(), "chrome_profiles", target_profile)
-            settings_file = os.path.join(profile_path, "profile_settings.json")
+            # Build proxy string for config.ini
+            # Format: http://username:password@server:port
+            server = self.parsed_proxy['server']
+            port = self.parsed_proxy['port']
+            username = self.parsed_proxy.get('username', '')
+            password = self.parsed_proxy.get('password', '')
             
-            # Load existing settings or create new
-            if os.path.exists(settings_file):
-                with open(settings_file, 'r', encoding='utf-8') as f:
-                    settings = json.load(f)
+            if username and password:
+                proxy_string = f"http://{username}:{password}@{server}:{port}"
             else:
-                settings = {}
+                proxy_string = f"http://{server}:{port}"
             
-            # Update proxy config
-            settings['proxy'] = {
-                'enabled': True,
-                'server': self.parsed_proxy['server'],
-                'port': self.parsed_proxy['port'],
-                'username': self.parsed_proxy['username'],
-                'password': self.parsed_proxy['password'],
-                'protocol': 'http'
-            }
+            # Save to config.ini via proxy_manager
+            success = self.manager.proxy_mgr.set_profile_proxy(target_profile, proxy_string)
             
-            # Save settings
-            os.makedirs(profile_path, exist_ok=True)
-            with open(settings_file, 'w', encoding='utf-8') as f:
-                json.dump(settings, f, indent=2, ensure_ascii=False)
-            
-            proxy_string = f"{self.parsed_proxy['server']}:{self.parsed_proxy['port']}:{self.parsed_proxy['username']}:{self.parsed_proxy['password']}"
-            self.log_proxy_status(f"✅ Proxy saved to profile_settings.json for {target_profile}")
-            self.log_proxy_status(f"   {proxy_string}")
-            self.log_proxy_status("   Method: Direct profile_settings.json")
-            self.log_proxy_status("   Proxy will be applied automatically on next Chrome launch")
-            self.log_proxy_status("   Extension will handle authentication automatically")
+            if success:
+                self.log_proxy_status(f"✅ Proxy saved to config.ini for {target_profile}")
+                self.log_proxy_status(f"   Server: {server}:{port}")
+                if username:
+                    self.log_proxy_status(f"   Username: {username}")
+                self.log_proxy_status("   Method: CDP Authentication (no extension needed)")
+                self.log_proxy_status("   Proxy will be applied automatically on next Chrome launch")
+                
+                # Refresh profiles tree to show new proxy
+                try:
+                    self.refresh_profiles()
+                except:
+                    pass
+            else:
+                self.log_proxy_status(f"❌ Failed to save proxy to config.ini")
                 
         except Exception as e:
             self.log_proxy_status(f"❌ Error applying proxy: {e}")
-    
-    # copy_proxy_from_source removed per simplification request
+            import traceback
+            traceback.print_exc()
 
     def force_import_proxy(self):
         """Import settings.json into SwitchyOmega extension storage for target profile."""
@@ -13960,8 +15775,259 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
         except Exception as e:
             print(f"Log error: {e}")
     
+    def show_set_proxy_dialog(self):
+        """Hiển thị dialog để set proxy cho profiles đã chọn"""
+        # Lấy profiles đã chọn
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showwarning("Cảnh báo", "Vui lòng chọn ít nhất một profile!")
+            return
+        
+        selected_profiles = [self.tree.item(item)['text'] for item in selection]
+        
+        # Tạo dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("🌐 Set Proxy cho Profiles")
+        dialog.geometry("700x600")
+        dialog.configure(bg='#ffffff')
+        
+        # Make dialog modal
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Header
+        header_frame = ttk.Frame(dialog, style='Modern.TFrame')
+        header_frame.pack(fill=tk.X, padx=20, pady=20)
+        
+        ttk.Label(header_frame, text="🌐 Set Proxy cho Profiles", 
+                 font=('Segoe UI', 16, 'bold'),
+                 style='Modern.TLabel').pack(anchor='w')
+        
+        ttk.Label(header_frame, text=f"Đã chọn {len(selected_profiles)} profile(s)", 
+                 font=('Segoe UI', 10),
+                 foreground='#666666',
+                 style='Modern.TLabel').pack(anchor='w', pady=(5, 0))
+        
+        # Main content
+        content_frame = ttk.Frame(dialog, style='Modern.TFrame')
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+        
+        # Proxy input section
+        input_frame = ttk.LabelFrame(content_frame, text="📝 Nhập Proxy", 
+                                     style='Modern.TLabelframe', padding=15)
+        input_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # Format guide
+        guide_text = """
+Format hỗ trợ:
+• ip:port:username:password (ví dụ: 192.168.1.1:8080:user:pass)
+• ip:port (ví dụ: 192.168.1.1:8080)
+• http://ip:port:username:password
+• socks5://ip:port:username:password
+        """
+        
+        ttk.Label(input_frame, text=guide_text, 
+                 font=('Segoe UI', 9),
+                 foreground='#666666',
+                 style='Modern.TLabel').pack(anchor='w', pady=(0, 10))
+        
+        # Proxy input
+        ttk.Label(input_frame, text="Proxy String:", 
+                 font=('Segoe UI', 10, 'bold'),
+                 style='Modern.TLabel').pack(anchor='w')
+        
+        proxy_entry = ttk.Entry(input_frame, font=('Segoe UI', 10), width=60)
+        proxy_entry.pack(fill=tk.X, pady=(5, 10))
+        proxy_entry.focus()
+        
+        # Hoặc nhập từng field
+        ttk.Label(input_frame, text="Hoặc nhập từng field:", 
+                 font=('Segoe UI', 10, 'bold'),
+                 style='Modern.TLabel').pack(anchor='w', pady=(10, 5))
+        
+        fields_frame = ttk.Frame(input_frame, style='Modern.TFrame')
+        fields_frame.pack(fill=tk.X)
+        
+        # IP
+        ip_frame = ttk.Frame(fields_frame, style='Modern.TFrame')
+        ip_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(ip_frame, text="IP:", width=12, style='Modern.TLabel').pack(side=tk.LEFT)
+        ip_entry = ttk.Entry(ip_frame, font=('Segoe UI', 10))
+        ip_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Port
+        port_frame = ttk.Frame(fields_frame, style='Modern.TFrame')
+        port_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(port_frame, text="Port:", width=12, style='Modern.TLabel').pack(side=tk.LEFT)
+        port_entry = ttk.Entry(port_frame, font=('Segoe UI', 10))
+        port_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Username
+        user_frame = ttk.Frame(fields_frame, style='Modern.TFrame')
+        user_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(user_frame, text="Username:", width=12, style='Modern.TLabel').pack(side=tk.LEFT)
+        user_entry = ttk.Entry(user_frame, font=('Segoe UI', 10))
+        user_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Password
+        pass_frame = ttk.Frame(fields_frame, style='Modern.TFrame')
+        pass_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(pass_frame, text="Password:", width=12, style='Modern.TLabel').pack(side=tk.LEFT)
+        pass_entry = ttk.Entry(pass_frame, font=('Segoe UI', 10), show='*')
+        pass_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Auto-fill proxy_entry from fields
+        def update_proxy_string(*args):
+            ip = ip_entry.get().strip()
+            port = port_entry.get().strip()
+            user = user_entry.get().strip()
+            password = pass_entry.get().strip()
+            
+            if ip and port:
+                if user and password:
+                    proxy_entry.delete(0, tk.END)
+                    proxy_entry.insert(0, f"{ip}:{port}:{user}:{password}")
+                else:
+                    proxy_entry.delete(0, tk.END)
+                    proxy_entry.insert(0, f"{ip}:{port}")
+        
+        # Bind events
+        for entry in [ip_entry, port_entry, user_entry, pass_entry]:
+            entry.bind('<KeyRelease>', update_proxy_string)
+        
+        # Selected profiles list
+        profiles_frame = ttk.LabelFrame(content_frame, text="📋 Profiles sẽ được set proxy", 
+                                       style='Modern.TLabelframe', padding=15)
+        profiles_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+        
+        profiles_text = tk.Text(profiles_frame, height=8, font=('Segoe UI', 9), 
+                               bg='#f5f5f5', relief='flat')
+        profiles_text.pack(fill=tk.BOTH, expand=True)
+        
+        for profile in selected_profiles:
+            profiles_text.insert(tk.END, f"• {profile}\n")
+        
+        profiles_text.config(state='disabled')
+        
+        # Status
+        status_frame = ttk.Frame(content_frame, style='Modern.TFrame')
+        status_frame.pack(fill=tk.X)
+        
+        status_label = ttk.Label(status_frame, text="", 
+                                font=('Segoe UI', 9),
+                                style='Modern.TLabel')
+        status_label.pack(anchor='w')
+        
+        # Buttons
+        button_frame = ttk.Frame(dialog, style='Modern.TFrame')
+        button_frame.pack(fill=tk.X, padx=20, pady=(0, 20))
+        
+        def apply_proxy():
+            proxy_string = proxy_entry.get().strip()
+            
+            if not proxy_string:
+                messagebox.showerror("Lỗi", "Vui lòng nhập proxy!")
+                return
+            
+            # Confirm
+            result = messagebox.askyesno("Xác nhận", 
+                f"Bạn có chắc muốn set proxy cho {len(selected_profiles)} profile(s)?\n\n"
+                f"Proxy: {proxy_string}")
+            
+            if not result:
+                return
+            
+            # Apply proxy
+            status_label.config(text="⏳ Đang set proxy...", foreground='#FF9800')
+            dialog.update()
+            
+            def apply_thread():
+                success_count = 0
+                failed_profiles = []
+                
+                for profile_name in selected_profiles:
+                    try:
+                        # Use proxy_manager to set proxy
+                        success = self.manager.proxy_mgr.set_profile_proxy(profile_name, proxy_string)
+                        
+                        if success:
+                            success_count += 1
+                            print(f"✅ Set proxy cho {profile_name}: {proxy_string}")
+                        else:
+                            failed_profiles.append(profile_name)
+                            print(f"❌ Lỗi set proxy cho {profile_name}")
+                    except Exception as e:
+                        failed_profiles.append(profile_name)
+                        print(f"❌ Exception khi set proxy cho {profile_name}: {e}")
+                
+                # Update UI
+                def update_ui():
+                    if success_count == len(selected_profiles):
+                        status_label.config(text=f"✅ Đã set proxy thành công cho {success_count} profile(s)!", 
+                                          foreground='#4CAF50')
+                        messagebox.showinfo("Thành công", 
+                            f"Đã set proxy thành công cho {success_count} profile(s)!")
+                        
+                        # Refresh profiles list
+                        self.refresh_profiles()
+                        dialog.destroy()
+                    else:
+                        status_label.config(text=f"⚠️ Thành công: {success_count}, Thất bại: {len(failed_profiles)}", 
+                                          foreground='#FF9800')
+                        
+                        error_msg = f"Thành công: {success_count}/{len(selected_profiles)}\n\n"
+                        error_msg += "Profiles thất bại:\n" + "\n".join(failed_profiles)
+                        messagebox.showwarning("Hoàn thành với lỗi", error_msg)
+                        
+                        # Refresh profiles list
+                        self.refresh_profiles()
+                
+                self.root.after(0, update_ui)
+            
+            # Run in thread
+            import threading
+            thread = threading.Thread(target=apply_thread, daemon=True)
+            thread.start()
+        
+        def test_proxy():
+            proxy_string = proxy_entry.get().strip()
+            
+            if not proxy_string:
+                messagebox.showerror("Lỗi", "Vui lòng nhập proxy!")
+                return
+            
+            status_label.config(text="🧪 Đang test proxy...", foreground='#2196F3')
+            dialog.update()
+            
+            # Simple test - just validate format
+            parts = proxy_string.replace('http://', '').replace('socks5://', '').split(':')
+            
+            if len(parts) >= 2:
+                status_label.config(text="✅ Format proxy hợp lệ!", foreground='#4CAF50')
+                messagebox.showinfo("Test Proxy", 
+                    f"Format proxy hợp lệ!\n\n"
+                    f"IP: {parts[0]}\n"
+                    f"Port: {parts[1]}\n" +
+                    (f"Username: {parts[2]}\n" if len(parts) > 2 else "") +
+                    (f"Password: {'*' * len(parts[3])}\n" if len(parts) > 3 else ""))
+            else:
+                status_label.config(text="❌ Format proxy không hợp lệ!", foreground='#F44336')
+                messagebox.showerror("Test Proxy", "Format proxy không hợp lệ!")
+        
+        ttk.Button(button_frame, text="✅ Áp dụng", 
+                  style='Modern.TButton',
+                  command=apply_proxy).pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Button(button_frame, text="🧪 Test Proxy", 
+                  style='Modern.TButton',
+                  command=test_proxy).pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Button(button_frame, text="❌ Hủy", 
+                  style='Modern.TButton',
+                  command=dialog.destroy).pack(side=tk.RIGHT)
+    
     def _save_bulk_run_data(self, data):
-        """Lưu dữ liệu bulk run vào file JSON"""
+        # Save bulk run data to JSON file
         try:
             import json
             import os
@@ -13973,7 +16039,7 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
             print(f"⚠️ [SAVE] Lỗi lưu bulk run data: {e}")
     
     def _load_bulk_run_data(self):
-        """Tải dữ liệu bulk run từ file JSON"""
+        # Load bulk run data from JSON file
         try:
             import json
             import os
@@ -14021,6 +16087,198 @@ Sau khi đăng nhập, profile sẽ được đồng bộ với tài khoản Goo
         except Exception as e:
             print(f"⚠️ [LOAD] Lỗi tải bulk run data: {e}")
             return {}
+
+    
+    def show_set_proxy_dialog(self):
+        # Set proxy dialog with bulk support
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showwarning("Canh bao", "Vui long chon it nhat mot profile!")
+            return
+        
+        selected_profiles = [self.tree.item(item)['text'] for item in selection]
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Set Proxy Hang Loat")
+        dialog.geometry("700x600")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Header
+        header = ttk.Frame(dialog)
+        header.pack(fill=tk.X, padx=20, pady=20)
+        
+        ttk.Label(header, text=f"Set proxy cho {len(selected_profiles)} profiles", 
+                 font=('Segoe UI', 14, 'bold')).pack()
+        
+        # Mode selection
+        mode_frame = ttk.LabelFrame(dialog, text="Che do", padding=10)
+        mode_frame.pack(fill=tk.X, padx=20, pady=10)
+        
+        mode_var = tk.StringVar(value="single")
+        
+        ttk.Radiobutton(mode_frame, text="1 proxy cho tat ca profiles", 
+                       variable=mode_var, value="single").pack(anchor='w')
+        ttk.Radiobutton(mode_frame, text="Nhieu proxy (moi profile 1 proxy)", 
+                       variable=mode_var, value="bulk").pack(anchor='w')
+        
+        # Single proxy mode
+        single_frame = ttk.LabelFrame(dialog, text="Nhap 1 proxy", padding=10)
+        single_frame.pack(fill=tk.X, padx=20, pady=10)
+        
+        ttk.Label(single_frame, text="Proxy (ip:port:user:pass):").pack(anchor='w')
+        single_proxy_entry = ttk.Entry(single_frame, width=60)
+        single_proxy_entry.pack(fill=tk.X, pady=5)
+        
+        # Helper text for removing proxy
+        ttk.Label(single_frame, text="💡 Nhập 'none' hoặc 'null' để xóa proxy", 
+                 foreground='gray', font=('Segoe UI', 9, 'italic')).pack(anchor='w', pady=(2, 0))
+        
+        # Bulk proxy mode
+        bulk_frame = ttk.LabelFrame(dialog, text="Nhap nhieu proxy (moi dong 1 proxy)", padding=10)
+        bulk_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        ttk.Label(bulk_frame, text=f"Nhap {len(selected_profiles)} proxy (moi dong 1 proxy):").pack(anchor='w')
+        
+        bulk_text = tk.Text(bulk_frame, height=10, width=60)
+        bulk_text.pack(fill=tk.BOTH, expand=True, pady=5)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(bulk_text, command=bulk_text.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        bulk_text.config(yscrollcommand=scrollbar.set)
+        
+        # Helper text
+        helper_text = f"Vi du:\n"
+        for i, p in enumerate(selected_profiles[:3], 1):
+            helper_text += f"192.168.1.{i}:8080:user{i}:pass{i}  # {p}\n"
+        if len(selected_profiles) > 3:
+            helper_text += f"...\n"
+        
+        ttk.Label(bulk_frame, text=helper_text, foreground='gray').pack(anchor='w')
+        
+        # Toggle visibility based on mode
+        def update_mode():
+            if mode_var.get() == "single":
+                single_frame.pack(fill=tk.X, padx=20, pady=10)
+                bulk_frame.pack_forget()
+                single_proxy_entry.focus()
+            else:
+                single_frame.pack_forget()
+                bulk_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+                bulk_text.focus()
+        
+        mode_var.trace('w', lambda *args: update_mode())
+        update_mode()
+        
+        # Status
+        status_label = ttk.Label(dialog, text="")
+        status_label.pack(pady=10)
+        
+        # Buttons
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(fill=tk.X, padx=20, pady=20)
+        
+        def apply():
+            mode = mode_var.get()
+            
+            if mode == "single":
+                # Single proxy mode
+                proxy = single_proxy_entry.get().strip()
+                if not proxy:
+                    messagebox.showerror("Loi", "Vui long nhap proxy!")
+                    return
+                
+                # Check if user wants to remove proxy
+                is_remove_proxy = proxy.lower() in ['none', 'null', 'no', 'remove', 'delete', 'clear']
+                
+                if is_remove_proxy:
+                    result = messagebox.askyesno("Xac nhan", 
+                        f"Ban co chac muon XOA proxy cho {len(selected_profiles)} profiles?")
+                    if not result:
+                        return
+                    proxy = ''  # Empty string to remove proxy
+                    status_label.config(text="Dang xoa proxy...")
+                else:
+                    status_label.config(text="Dang set proxy...")
+                
+                dialog.update()
+                
+                def worker():
+                    ok = 0
+                    for p in selected_profiles:
+                        try:
+                            if self.manager.proxy_mgr.set_profile_proxy(p, proxy):
+                                ok += 1
+                                if is_remove_proxy:
+                                    print(f"Xoa proxy cho {p}")
+                                else:
+                                    print(f"Set proxy cho {p}: {proxy}")
+                        except Exception as e:
+                            print(f"Loi set proxy cho {p}: {e}")
+                    
+                    action = "xoa" if is_remove_proxy else "set"
+                    self.root.after(0, lambda: messagebox.showinfo("Ket qua", f"Da {action} proxy cho {ok}/{len(selected_profiles)} profiles"))
+                    self.root.after(0, lambda: self.refresh_profiles())
+                    self.root.after(0, dialog.destroy)
+                
+                import threading
+                threading.Thread(target=worker, daemon=True).start()
+                
+            else:
+                # Bulk proxy mode
+                proxy_lines = [line.strip() for line in bulk_text.get('1.0', tk.END).splitlines() if line.strip() and not line.strip().startswith('#')]
+                
+                if len(proxy_lines) < len(selected_profiles):
+                    messagebox.showerror("Loi", f"Can {len(selected_profiles)} proxy nhung chi co {len(proxy_lines)} proxy!")
+                    return
+                
+                # Confirm
+                result = messagebox.askyesno("Xac nhan", 
+                    f"Ban co chac muon set {len(selected_profiles)} proxy cho {len(selected_profiles)} profiles?")
+                
+                if not result:
+                    return
+                
+                status_label.config(text="Dang set proxy hang loat...")
+                dialog.update()
+                
+                def worker():
+                    ok = 0
+                    failed = []
+                    
+                    for i, p in enumerate(selected_profiles):
+                        if i < len(proxy_lines):
+                            proxy = proxy_lines[i]
+                            try:
+                                if self.manager.proxy_mgr.set_profile_proxy(p, proxy):
+                                    ok += 1
+                                    print(f"Set proxy cho {p}: {proxy}")
+                                else:
+                                    failed.append(f"{p}: Failed")
+                            except Exception as e:
+                                failed.append(f"{p}: {e}")
+                                print(f"Loi set proxy cho {p}: {e}")
+                    
+                    def show_result():
+                        if failed:
+                            msg = f"Thanh cong: {ok}/{len(selected_profiles)}\n\nThat bai:\n" + "\n".join(failed[:5])
+                            if len(failed) > 5:
+                                msg += f"\n... va {len(failed)-5} loi khac"
+                            messagebox.showwarning("Ket qua", msg)
+                        else:
+                            messagebox.showinfo("Thanh cong", f"Da set proxy cho {ok} profiles!")
+                        
+                        self.refresh_profiles()
+                        dialog.destroy()
+                    
+                    self.root.after(0, show_result)
+                
+                import threading
+                threading.Thread(target=worker, daemon=True).start()
+        
+        ttk.Button(btn_frame, text="Ap dung", command=apply).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Huy", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
 
 if __name__ == "__main__":
     app = ModernChromeProfileManager()

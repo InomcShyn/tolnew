@@ -1,0 +1,9 @@
+# File để set proxy cho nhiều profiles
+# Format: profile_name|proxy_string
+# Proxy format: server:port:username:password
+
+# Example:
+P-156383-0009|103.182.19.46:8579:ToTXvhm3kaimi:idb4E4D7
+P-156383-0010|117.5.225.179:53984:qjtkl_kaimi:uvFvn2yp
+
+# Thêm các profiles khác ở đây...

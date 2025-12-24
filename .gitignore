@@ -1,0 +1,139 @@
+# ===============================
+# Runtime / Local data (DO NOT COMMIT)
+# ===============================
+chrome_profiles/
+chrome_binaries/
+base_data/
+chrome_data/
+baseline_data/
+chrome_flags_extracted/
+ram_logs/
+captcha_test_results/
+
+# ===============================
+# Python
+# ===============================
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# ===============================
+# OS / Editor
+# ===============================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ===============================
+# Logs & Debug Files
+# ===============================
+*.log
+logs/
+*.json
+!package.json
+!gpm_config.json
+!bulk_run_data.json
+
+# ===============================
+# Test Files
+# ===============================
+test_*.py
+test_*.js
+test_*.html
+*_test.py
+*_test.js
+verify_*.py
+check_*.py
+compare_*.py
+analyze_*.py
+diagnose_*.py
+show_*.py
+demo_*.py
+run_js_tests.py
+
+# ===============================
+# Chrome 119 Conversion & Fix Scripts
+# ===============================
+fix_*.py
+apply_*.py
+downgrade_*.py
+update_to_119_*.py
+setup_chrome_119.py
+copy_chrome_119_*.py
+trace_version_*.py
+auto_fix_*.py
+auto_downgrade_*.py
+quick_downgrade_*.py
+*_119_*.py
+*_version_*.py
+
+# ===============================
+# Documentation (Keep only essential)
+# ===============================
+# Ignore all .md files except essential ones
+*.md
+!README.md
+!QUICKSTART.md
+!API_REFERENCE.md
+
+# Specific documentation patterns to ignore
+*_GUIDE.md
+*_SUMMARY.md
+*_COMPLETE.md
+*_FIX.md
+*_ANALYSIS.md
+*_REPORT.md
+*_STATUS.md
+*_READY.md
+*_IMPLEMENTATION.md
+*_INTEGRATION.md
+*_COMPARISON.md
+*_REFERENCE.md
+HUONG_DAN_*.md
+TOM_TAT_*.md
+SO_SANH_*.md
+CHAY_NGAY_*.md
+FIX_*.md
+HOW_TO_*.md
+QUICK_*.md
+*_QUICK_REF.md
+
+# Ignore all .txt files except essential ones
+*.txt
+!requirements.txt
+!profiles.txt
+!proxies.txt
+!proxies_example.txt
+*_SUMMARY.txt
+*_FIX.txt
+*_QUICK_REF.txt
+*_NOW.txt
+QUICK_*.txt
+TOM_TAT_*.txt
+LAY_*.txt
+CHAY_*.txt
+
+# ===============================
+# Backup Files
+# ===============================
+*.backup
+*.bak
+*_backup_*
+backups/
+*.py.backup*
+playwright_stealth_2025.py.backup_*
+
+# ===============================
+# Temporary & Analysis Files
+# ===============================
+analysis/
+system_analysis/
+system_monitor/
+tiles/
+auth/
+automation/
+network/
+tiktok/

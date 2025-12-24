@@ -577,17 +577,20 @@ def setup_omocaptcha_for_bulk_run(manager, profile_name, api_key, auto_install=T
                     pass
         
         # Cài extension nếu được yêu cầu (truyền api_key để inject ngay)
+        # ✅ FIX: Sử dụng force=True để bỏ qua kiểm tra Chrome đang chạy
+        # Vì đã xóa DevToolsActivePort ở trên, nên an toàn để cài extension
         if auto_install and api_key:
             install_ok, install_msg = install_omocaptcha_extension_local(
-                manager, profile_name, extension_id, force=False, api_key=api_key
+                manager, profile_name, extension_id, force=True, api_key=api_key
             )
             install_success = install_ok
             if not install_ok:
                 messages.append(f"⚠️ Cài extension: {install_msg}")
         
         # Lưu API key
+        # ✅ FIX: Sử dụng force=True để bỏ qua kiểm tra Chrome đang chạy
         if api_key and api_key.strip():
-            key_ok, key_msg = set_omocaptcha_api_key_for_profile(manager, profile_name, api_key.strip(), extension_id)
+            key_ok, key_msg = set_omocaptcha_api_key_for_profile(manager, profile_name, api_key.strip(), extension_id, force=True)
             key_success = key_ok
             if not key_ok:
                 messages.append(f"⚠️ Lưu API key: {key_msg}")

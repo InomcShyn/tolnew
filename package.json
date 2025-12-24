@@ -1,0 +1,22 @@
+{
+  "name": "tiktok-hotmail-code-fetcher",
+  "version": "1.0.0",
+  "description": "Fetch TikTok verification code from Hotmail via OAuth2 API",
+  "main": "getTikTokCodeFromHotmail.js",
+  "scripts": {
+    "test": "node getTikTokCodeFromHotmail.js",
+    "start": "node getTikTokCodeFromHotmail.js"
+  },
+  "keywords": [
+    "tiktok",
+    "hotmail",
+    "oauth2",
+    "verification",
+    "code"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
+}

@@ -1,0 +1,496 @@
+openapi: 3.0.3
+info:
+  title: Live Control API
+  description: REST API for managing TikTok LIVE viewing jobs
+  version: 1.0.0
+  contact:
+    name: API Support
+servers:
+  - url: http://127.0.0.1:8001
+    description: Local development server
+tags:
+  - name: Jobs
+    description: Job management operations
+  - name: Health
+    description: Health check operations
+paths:
+  /api/control/start:
+    post:
+      tags:
+        - Jobs
+      summary: Start Job
+      description: Creates and starts a new job with the specified configuration
+      operationId: startJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartJobRequest'
+            examples:
+              basic:
+                summary: Basic job
+                value:
+                  live_url: https://www.tiktok.com/@username/live
+                  target_views: 5
+                  duration_minutes: 30
+              full:
+                summary: Full configuration
+                value:
+                  live_url: https://www.tiktok.com/@username/live
+                  target_views: 5
+                  duration_minutes: 30
+                  use_direct_url: true
+                  viewport_width: 720
+                  viewport_height: 1280
+      responses:
+        '200':
+          description: Job started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartJobResponse'
+              example:
+                job_id: job_abc12345
+                status: starting
+                profiles_launched:
+                  - '001'
+                  - '002'
+                  - '003'
+                  - '004'
+                  - '005'
+                end_timestamp: 1703125400.0
+                message: Job started successfully
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: 'Not enough profiles. Requested: 100, Available: 50'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/control/status/{job_id}:
+    get:
+      tags:
+        - Jobs
+      summary: Get Job Status
+      description: Retrieves the current status and details of a specific job
+      operationId: getJobStatus
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: Unique job identifier
+          schema:
+            type: string
+          example: job_abc12345
+      responses:
+        '200':
+          description: Job status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatusResponse'
+              example:
+                job_id: job_abc12345
+                live_url: https://www.tiktok.com/@username/live
+                target_views: 5
+                profiles_assigned:
+                  - '001'
+                  - '002'
+                  - '003'
+                  - '004'
+                  - '005'
+                profiles_running: 5
+                remaining_seconds: 842
+                status: running
+                start_timestamp: 1703123400.0
+                end_timestamp: 1703125400.0
+                error: null
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: 'Job not found: job_invalid123'
+  /api/control/stop/{job_id}:
+    post:
+      tags:
+        - Jobs
+      summary: Stop Job
+      description: Stops a running job and terminates all associated profiles
+      operationId: stopJob
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: Unique job identifier
+          schema:
+            type: string
+          example: job_abc12345
+      responses:
+        '200':
+          description: Job stop initiated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StopJobResponse'
+              example:
+                job_id: job_abc12345
+                status: stopping
+                profiles_stopped: 5
+                message: Job stop initiated
+        '400':
+          description: Job cannot be stopped
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: 'Job cannot be stopped. Current status: completed'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                detail: 'Job not found: job_invalid123'
+  /api/control/jobs:
+    get:
+      tags:
+        - Jobs
+      summary: List Jobs
+      description: Retrieves a list of all jobs with their current status
+      operationId: listJobs
+      responses:
+        '200':
+          description: Jobs list retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListJobsResponse'
+              example:
+                jobs:
+                  - job_id: job_abc12345
+                    live_url: https://www.tiktok.com/@username/live
+                    target_views: 5
+                    status: running
+                    profiles_assigned:
+                      - '001'
+                      - '002'
+                      - '003'
+                      - '004'
+                      - '005'
+                    profiles_running: 5
+                    remaining_seconds: 842
+                    created_at: 1703123000.0
+                    start_timestamp: 1703123400.0
+                    end_timestamp: 1703125400.0
+                  - job_id: job_def67890
+                    live_url: https://www.tiktok.com/@another/live
+                    target_views: 3
+                    status: completed
+                    profiles_assigned:
+                      - '006'
+                      - '007'
+                      - '008'
+                    profiles_running: 0
+                    remaining_seconds: 0
+                    created_at: 1703120000.0
+                    start_timestamp: 1703120100.0
+                    end_timestamp: 1703121900.0
+                total: 2
+                timestamp: 1703123456.789
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health Check
+      description: Checks the health status of the API and returns statistics
+      operationId: healthCheck
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: healthy
+                total_jobs: 5
+                running_jobs: 2
+                timestamp: 1703123456.789
+components:
+  schemas:
+    StartJobRequest:
+      type: object
+      required:
+        - live_url
+        - target_views
+        - duration_minutes
+      properties:
+        live_url:
+          type: string
+          description: TikTok LIVE stream URL
+          example: https://www.tiktok.com/@username/live
+        target_views:
+          type: integer
+          description: Number of profiles to launch
+          minimum: 1
+          maximum: 100
+          example: 5
+        duration_minutes:
+          type: integer
+          description: Duration in minutes
+          minimum: 1
+          maximum: 1440
+          example: 30
+        use_direct_url:
+          type: boolean
+          description: Use direct URL entry
+          default: true
+          example: true
+        viewport_width:
+          type: integer
+          description: Viewport width in pixels
+          minimum: 360
+          default: 720
+          example: 720
+        viewport_height:
+          type: integer
+          description: Viewport height in pixels
+          minimum: 640
+          default: 1280
+          example: 1280
+    StartJobResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          description: Unique identifier for the job
+          example: job_abc12345
+        status:
+          type: string
+          description: Current job status
+          enum:
+            - pending
+            - starting
+            - running
+            - stopping
+            - stopped
+            - completed
+            - failed
+          example: starting
+        profiles_launched:
+          type: array
+          description: List of profile identifiers assigned to the job
+          items:
+            type: string
+          example:
+            - '001'
+            - '002'
+            - '003'
+            - '004'
+            - '005'
+        end_timestamp:
+          type: number
+          format: double
+          description: Unix timestamp when job will complete
+          example: 1703125400.0
+        message:
+          type: string
+          description: Human-readable status message
+          example: Job started successfully
+    JobStatusResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          description: Unique identifier for the job
+          example: job_abc12345
+        live_url:
+          type: string
+          description: TikTok LIVE stream URL
+          example: https://www.tiktok.com/@username/live
+        target_views:
+          type: integer
+          description: Number of profiles assigned
+          example: 5
+        profiles_assigned:
+          type: array
+          description: List of profile identifiers
+          items:
+            type: string
+          example:
+            - '001'
+            - '002'
+            - '003'
+            - '004'
+            - '005'
+        profiles_running:
+          type: integer
+          description: Number of currently active profiles
+          example: 5
+        remaining_seconds:
+          type: integer
+          description: Seconds until job completion
+          example: 842
+        status:
+          type: string
+          description: Current job status
+          enum:
+            - pending
+            - starting
+            - running
+            - stopping
+            - stopped
+            - completed
+            - failed
+          example: running
+        start_timestamp:
+          type: number
+          format: double
+          description: Unix timestamp when job started
+          nullable: true
+          example: 1703123400.0
+        end_timestamp:
+          type: number
+          format: double
+          description: Unix timestamp when job will complete
+          example: 1703125400.0
+        error:
+          type: string
+          description: Error message if status is failed
+          nullable: true
+          example: null
+    StopJobResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+          description: Unique identifier for the job
+          example: job_abc12345
+        status:
+          type: string
+          description: Current job status
+          example: stopping
+        profiles_stopped:
+          type: integer
+          description: Number of profiles being stopped
+          example: 5
+        message:
+          type: string
+          description: Human-readable status message
+          example: Job stop initiated
+    ListJobsResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          description: Array of job objects
+          items:
+            $ref: '#/components/schemas/JobObject'
+        total:
+          type: integer
+          description: Total number of jobs
+          example: 2
+        timestamp:
+          type: number
+          format: double
+          description: Unix timestamp of the response
+          example: 1703123456.789
+    JobObject:
+      type: object
+      properties:
+        job_id:
+          type: string
+          description: Unique identifier for the job
+          example: job_abc12345
+        live_url:
+          type: string
+          description: TikTok LIVE stream URL
+          example: https://www.tiktok.com/@username/live
+        target_views:
+          type: integer
+          description: Number of profiles assigned
+          example: 5
+        status:
+          type: string
+          description: Current job status
+          enum:
+            - pending
+            - starting
+            - running
+            - stopping
+            - stopped
+            - completed
+            - failed
+          example: running
+        profiles_assigned:
+          type: array
+          description: List of profile identifiers
+          items:
+            type: string
+          example:
+            - '001'
+            - '002'
+            - '003'
+        profiles_running:
+          type: integer
+          description: Number of currently active profiles
+          example: 5
+        remaining_seconds:
+          type: integer
+          description: Seconds until job completion
+          example: 842
+        created_at:
+          type: number
+          format: double
+          description: Unix timestamp when job was created
+          example: 1703123000.0
+        start_timestamp:
+          type: number
+          format: double
+          description: Unix timestamp when job started
+          example: 1703123400.0
+        end_timestamp:
+          type: number
+          format: double
+          description: Unix timestamp when job will complete
+          example: 1703125400.0
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Health status
+          example: healthy
+        total_jobs:
+          type: integer
+          description: Total number of jobs in the system
+          example: 5
+        running_jobs:
+          type: integer
+          description: Number of currently running jobs
+          example: 2
+        timestamp:
+          type: number
+          format: double
+          description: Unix timestamp of the response
+          example: 1703123456.789
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          description: Error message
+          example: Job not found
